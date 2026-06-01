@@ -1,0 +1,29 @@
+<!-- Add these keys inside the <dict> in ios/App/App/Info.plist -->
+
+<key>NSCameraUsageDescription</key>
+<string>Tribe uses your camera to scan barcodes and take food photos for nutrition logging.</string>
+
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Tribe accesses your photos to let you share workout and meal images with your tribe.</string>
+
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Tribe saves photos to your library when you download content.</string>
+
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Tribe uses your location to help you find gym buddies and tribes near you.</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>Tribe uses the microphone for video reels recording.</string>
+
+<!-- URL scheme for Supabase auth deep linking -->
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>com.tribe.fitness</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>com.tribe.fitness</string>
+    </array>
+  </dict>
+</array>

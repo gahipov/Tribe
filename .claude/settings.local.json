@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash \"C:/Users/Gur/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming/scripts/start-server.sh\" --project-dir \"D:/gymapp\")",
+      "PowerShell(New-Item -ItemType Directory -Force D:\\\\gymapp\\\\docs\\\\superpowers\\\\specs)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s \"https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken+breast&search_simple=1&action=process&json=1&page_size=3\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(p.get\\('product_name','?'\\), '|', p.get\\('nutriments',{}\\).get\\('energy-kcal_100g','?'\\), 'kcal | P:', p.get\\('nutriments',{}\\).get\\('proteins_100g','?'\\), '| C:', p.get\\('nutriments',{}\\).get\\('carbohydrates_100g','?'\\), '| F:', p.get\\('nutriments',{}\\).get\\('fat_100g','?'\\)\\) for p in d.get\\('products',[]\\)]\")",
+      "WebFetch(domain:world.openfoodfacts.org)",
+      "WebFetch(domain:api.nal.usda.gov)"
+    ]
+  }
+}

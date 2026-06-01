@@ -1,0 +1,60 @@
+workflows:
+  ios-release:
+    name: Tribe iOS Release
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Apple API Key  # set this up in Codemagic settings
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tribe.fitness
+      vars:
+        BUNDLE_ID: com.tribe.fitness
+        XCODE_WORKSPACE: ios/App/App.xcworkspace
+        XCODE_SCHEME: App
+      node: 20.x
+
+    scripts:
+      - name: Install dependencies
+        script: npm install
+
+      - name: Set environment variables
+        script: |
+          echo "VITE_SUPABASE_URL=$VITE_SUPABASE_URL" >> .env
+          echo "VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY" >> .env
+          echo "VITE_USDA_API_KEY=$VITE_USDA_API_KEY" >> .env
+          echo "VITE_PADDLE_PRICE_ID=$VITE_PADDLE_PRICE_ID" >> .env
+
+      - name: Build web app
+        script: npm run build
+
+      - name: Sync Capacitor
+        script: npx cap sync ios
+
+      - name: Install CocoaPods
+        script: |
+          cd ios/App
+          pod install
+
+      - name: Set app version
+        script: |
+          LATEST_BUILD=$(app-store-connect get-latest-testflight-build-number "$BUNDLE_ID" 2>/dev/null || echo "0")
+          agvtool new-version -all $((LATEST_BUILD + 1))
+
+      - name: Build iOS
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true   # goes to TestFlight first so you can test
+        submit_to_app_store: false   # flip to true when ready for full release

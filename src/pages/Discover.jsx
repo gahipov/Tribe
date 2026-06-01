@@ -1,0 +1,249 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/api/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
+import { useState, useEffect } from "react";
+import { Loader2, MapPin, Users, Search, Navigation, Shield, Plus, X, UserPlus, Check, MessageCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import BuddyCard from "../components/BuddyCard";
+import TribeChat from "../components/TribeChat";
+import { toast } from "sonner";
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R=6371, dLat=((lat2-lat1)*Math.PI)/180, dLon=((lon2-lon1)*Math.PI)/180;
+  const a=Math.sin(dLat/2)**2+Math.cos((lat1*Math.PI)/180)*Math.cos((lat2*Math.PI)/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function distanceLabel(km) { if(km<1) return Math.round(km*1000)+"m away"; if(km<10) return km.toFixed(1)+"km away"; return Math.round(km)+"km away"; }
+const RADIUS_OPTIONS=[5,15,50,999], RADIUS_LABELS=["5km","15km","50km","Any"];
+
+export default function Discover() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState("buddies");
+  const [search, setSearch] = useState("");
+  const [sentRequests, setSentRequests] = useState(new Set());
+  const [myLocation, setMyLocation] = useState(null);
+  const [locLoading, setLocLoading] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(999);
+  const [tribeForm, setTribeForm] = useState({ name: "", description: "", gym_name: "" });
+  const [tribeDialogOpen, setTribeDialogOpen] = useState(false);
+  const [joinedTribes, setJoinedTribes] = useState(new Set());
+  const [selectedTribe, setSelectedTribe] = useState(null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => { if (user?.lat && user?.lng) setMyLocation({ lat: user.lat, lng: user.lng }); }, [user]);
+
+  const shareLocation = () => {
+    setLocLoading(true);
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      setMyLocation({ lat, lng });
+      await supabase.from('profiles').update({ lat, lng }).eq('id', user.id);
+      setLocLoading(false); toast.success("Location shared!");
+    }, () => { setLocLoading(false); toast.error("Couldn't get location."); });
+  };
+
+  const { data: profiles = [], isLoading } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: async () => { const { data } = await supabase.from('profiles').select('*'); return data || []; },
+  });
+
+  const { data: existingRequests = [] } = useQuery({
+    queryKey: ["buddy-requests"],
+    queryFn: async () => { const { data } = await supabase.from('buddy_requests').select('*').eq('from_user_id', user.id); return data || []; },
+    enabled: !!user,
+  });
+
+  useEffect(() => { if (existingRequests.length > 0) setSentRequests(new Set(existingRequests.map(r => r.to_user_email))); }, [existingRequests]);
+
+  const connectMutation = useMutation({
+    mutationFn: async (profile) => {
+      const { error } = await supabase.from('buddy_requests').insert({ from_user_id: user.id, to_user_email: profile.email, to_user_name: profile.full_name||profile.email, status: "pending", message: "Hey! Let's hit the gym together." });
+      if (error) throw error;
+    },
+    onSuccess: (_, profile) => { setSentRequests(prev => new Set([...prev, profile.email])); queryClient.invalidateQueries({ queryKey: ["buddy-requests"] }); toast.success("Connection request sent!"); }
+  });
+
+  const usersWithDistance = profiles.filter(p => p.id !== user?.id)
+    .map(p => ({ ...p, distance: (myLocation && p.lat && p.lng) ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : null }))
+    .filter(p => { if (myLocation && p.lat && p.lng && p.distance > radiusKm) return false; if (!search) return true; const q=search.toLowerCase(); return p.full_name?.toLowerCase().includes(q)||p.city?.toLowerCase().includes(q)||p.gym_name?.toLowerCase().includes(q)||p.fitness_interests?.some(i=>i.toLowerCase().includes(q)); })
+    .sort((a,b) => { if(a.distance!==null&&b.distance!==null) return a.distance-b.distance; if(a.distance!==null) return -1; if(b.distance!==null) return 1; return 0; });
+
+  const nearbyCount = usersWithDistance.filter(u => u.distance!==null && u.distance<=15).length;
+
+  // Tribes
+  const { data: tribes = [], isLoading: tribesLoading } = useQuery({
+    queryKey: ["tribes"],
+    queryFn: async () => { const { data } = await supabase.from("tribes").select("*").order("member_count", { ascending: false }); return data || []; },
+  });
+  const { data: myMemberships = [] } = useQuery({
+    queryKey: ["tribe-members-me"],
+    queryFn: async () => { const { data } = await supabase.from("tribe_members").select("tribe_id").eq("user_id", user.id); return data || []; },
+    enabled: !!user,
+  });
+  useEffect(() => { if (myMemberships.length) setJoinedTribes(new Set(myMemberships.map(m => m.tribe_id))); }, [myMemberships]);
+
+  const createTribeMutation = useMutation({
+    mutationFn: async () => {
+      const { data: tribe, error } = await supabase.from("tribes").insert({ name: tribeForm.name, description: tribeForm.description, gym_name: tribeForm.gym_name, creator_id: user.id }).select().single();
+      if (error) throw error;
+      await supabase.from("tribe_members").insert({ tribe_id: tribe.id, user_id: user.id });
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["tribes"] }); queryClient.invalidateQueries({ queryKey: ["tribe-members-me"] }); toast.success("Tribe created!"); setTribeForm({ name: "", description: "", gym_name: "" }); setTribeDialogOpen(false); },
+    onError: (err) => toast.error("Failed: " + (err?.message || JSON.stringify(err))),
+  });
+
+  const joinTribeMutation = useMutation({
+    mutationFn: async (tribeId) => {
+      const { error } = await supabase.from("tribe_members").insert({ tribe_id: tribeId, user_id: user.id });
+      if (error) throw error;
+      const current = tribes.find(t => t.id === tribeId);
+      await supabase.from("tribes").update({ member_count: (current?.member_count || 1) + 1 }).eq("id", tribeId);
+    },
+    onSuccess: (_, tribeId) => { setJoinedTribes(prev => new Set([...prev, tribeId])); queryClient.invalidateQueries({ queryKey: ["tribes"] }); toast.success("Joined tribe!"); },
+    onError: () => toast.error("Failed to join tribe"),
+  });
+
+  const leaveTribeMutation = useMutation({
+    mutationFn: async (tribeId) => {
+      await supabase.from("tribe_members").delete().eq("tribe_id", tribeId).eq("user_id", user.id);
+      const current = tribes.find(t => t.id === tribeId);
+      await supabase.from("tribes").update({ member_count: Math.max(1, (current?.member_count || 2) - 1) }).eq("id", tribeId);
+    },
+    onSuccess: (_, tribeId) => { setJoinedTribes(prev => { const n=new Set(prev); n.delete(tribeId); return n; }); queryClient.invalidateQueries({ queryKey: ["tribes"] }); toast.success("Left tribe"); },
+    onError: () => toast.error("Failed to leave tribe"),
+  });
+
+  return (
+    <div className="max-w-lg mx-auto">
+      <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl px-4 py-4 border-b border-border">
+        <h1 className="font-display text-xl font-bold tracking-tight mb-3">Discover</h1>
+        <div className="flex gap-1 bg-secondary rounded-xl p-1 mb-3">
+          {[{id:"buddies",label:"Gym Buddies",Icon:Users},{id:"tribes",label:"Tribes",Icon:Shield}].map(({id,label,Icon})=>(
+            <button key={id} onClick={()=>setTab(id)} className={"flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm font-heading font-medium transition-colors "+(tab===id?"bg-primary text-primary-foreground":"text-muted-foreground")}>
+              <Icon className="h-3.5 w-3.5"/>{label}
+            </button>
+          ))}
+        </div>
+        {tab === "buddies" && !myLocation ? (
+          <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex items-center gap-3 mb-3">
+            <Navigation className="h-5 w-5 text-primary flex-shrink-0"/>
+            <div className="flex-1 min-w-0"><p className="text-xs font-heading font-semibold">Share your location</p><p className="text-[11px] text-muted-foreground">Find people training near you</p></div>
+            <Button size="sm" onClick={shareLocation} disabled={locLoading} className="rounded-full h-7 text-xs flex-shrink-0">{locLoading ? <Loader2 className="h-3 w-3 animate-spin"/> : "Enable"}</Button>
+          </div>
+        ) : tab === "buddies" ? (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-1.5 text-xs text-primary bg-primary/10 px-2.5 py-1 rounded-full"><MapPin className="h-3 w-3"/><span>{nearbyCount>0 ? nearbyCount+" people nearby" : "Location active"}</span></div>
+            <div className="flex gap-1 ml-auto">{RADIUS_OPTIONS.map((r,i) => <button key={r} onClick={() => setRadiusKm(r)} className={"text-[11px] px-2 py-1 rounded-full font-heading font-medium transition-colors "+(radiusKm===r?"bg-primary text-primary-foreground":"bg-secondary text-muted-foreground")}>{RADIUS_LABELS[i]}</button>)}</div>
+          </div>
+        ) : null}
+        {tab === "buddies" && (
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"/><Input placeholder="Search by name, city, or interest..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 bg-secondary border-border"/></div>
+        )}
+      </div>
+
+      {/* Buddies tab */}
+      {tab === "buddies" && (
+        <div className="p-4 space-y-3">
+          {isLoading ? <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary"/></div>
+          : usersWithDistance.length===0 ? <div className="text-center py-20"><div className="h-20 w-20 rounded-full bg-secondary mx-auto flex items-center justify-center mb-4"><Users className="h-10 w-10 text-primary/50"/></div><h3 className="font-heading font-semibold text-lg">No buddies found</h3><p className="text-sm text-muted-foreground mt-1">{myLocation&&radiusKm<999?"Try a wider radius":search?"Try a different search":"Invite friends to grow your tribe"}</p></div>
+          : usersWithDistance.map(profile => (
+            <div key={profile.id} className="relative">
+              {profile.distance!==null && <div className="absolute top-3 right-12 z-10 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-full px-2 py-0.5 text-[10px] font-heading font-medium text-primary border border-border"><MapPin className="h-2.5 w-2.5"/>{distanceLabel(profile.distance)}</div>}
+              <BuddyCard user={profile} onConnect={p => connectMutation.mutate(p)} connected={sentRequests.has(profile.email)}/>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tribes tab */}
+      {tab === "tribes" && (
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{tribes.length} tribe{tribes.length!==1?"s":""} available</p>
+            <Dialog open={tribeDialogOpen} onOpenChange={setTribeDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="rounded-full font-heading"><Plus className="h-4 w-4 mr-1"/>Create Tribe</Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-border max-w-sm">
+                <DialogHeader><DialogTitle className="font-heading">Create a Tribe</DialogTitle></DialogHeader>
+                <div className="space-y-3 pt-2">
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Name *</Label><Input value={tribeForm.name} onChange={e=>setTribeForm(f=>({...f,name:e.target.value}))} placeholder="Beast Mode Squad" className="bg-secondary border-border"/></div>
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Description</Label><Textarea value={tribeForm.description} onChange={e=>setTribeForm(f=>({...f,description:e.target.value}))} placeholder="What your tribe is about..." className="bg-secondary border-border resize-none" rows={2}/></div>
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Gym (optional)</Label><Input value={tribeForm.gym_name} onChange={e=>setTribeForm(f=>({...f,gym_name:e.target.value}))} placeholder="Gold's Gym, Planet Fitness..." className="bg-secondary border-border"/></div>
+                  <Button onClick={()=>createTribeMutation.mutate()} disabled={!tribeForm.name.trim()||createTribeMutation.isPending} className="w-full font-heading">
+                    {createTribeMutation.isPending?<Loader2 className="h-4 w-4 animate-spin mr-2"/>:null}Create Tribe
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {tribesLoading ? <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary"/></div>
+          : tribes.length===0 ? (
+            <div className="text-center py-20">
+              <Shield className="h-16 w-16 text-primary/20 mx-auto mb-3"/>
+              <h3 className="font-heading font-semibold">No tribes yet</h3>
+              <p className="text-sm text-muted-foreground mt-1">Be the first to create one</p>
+            </div>
+          ) : tribes.map(tribe => {
+            const isMember = joinedTribes.has(tribe.id);
+            const isCreator = tribe.creator_id === user?.id;
+            return (
+              <div key={tribe.id} className="bg-card rounded-2xl border border-border overflow-hidden">
+                {/* Tappable body */}
+                <button className="w-full p-4 text-left" onClick={() => setSelectedTribe(tribe)}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Shield className="h-4 w-4 text-primary"/>
+                        </div>
+                        <div>
+                          <p className="font-heading font-bold text-sm">{tribe.name}</p>
+                          {tribe.gym_name && <p className="text-[11px] text-muted-foreground">{tribe.gym_name}</p>}
+                        </div>
+                      </div>
+                      {tribe.description && <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{tribe.description}</p>}
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground"><Users className="h-3 w-3"/>{tribe.member_count||1} member{(tribe.member_count||1)!==1?"s":""}</span>
+                        <span className="flex items-center gap-1 text-xs text-primary/70"><MessageCircle className="h-3 w-3"/>Open chat</span>
+                        {isCreator && <span className="text-[10px] text-primary font-medium bg-primary/10 px-1.5 py-0.5 rounded-full">Creator</span>}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+                {/* Actions row */}
+                <div className="flex items-center gap-2 px-4 pb-3">
+                  {!isCreator ? (
+                    <button
+                      onClick={e => { e.stopPropagation(); isMember ? leaveTribeMutation.mutate(tribe.id) : joinTribeMutation.mutate(tribe.id); }}
+                      className={"flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-heading font-semibold transition-colors " + (isMember ? "bg-secondary text-muted-foreground hover:text-destructive" : "bg-primary text-primary-foreground")}
+                    >
+                      {isMember ? <><X className="h-3 w-3"/>Leave</> : <><UserPlus className="h-3 w-3"/>Join</>}
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-primary"><Check className="h-3.5 w-3.5"/>Member</span>
+                  )}
+                  {isMember && (
+                    <button
+                      onClick={() => setSelectedTribe(tribe)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-heading font-medium bg-secondary text-foreground"
+                    >
+                      <MessageCircle className="h-3 w-3"/>Chat
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <TribeChat tribe={selectedTribe} open={!!selectedTribe} onClose={() => setSelectedTribe(null)} />
+    </div>
+  );
+}
