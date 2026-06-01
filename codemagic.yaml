@@ -35,8 +35,7 @@ workflows:
       - name: Set app version
         script: |
           cd ios/App
-          LATEST_BUILD=$(app-store-connect get-latest-testflight-build-number "$BUNDLE_ID" 2>/dev/null || echo "0")
-          agvtool new-version -all $((LATEST_BUILD + 1))
+          agvtool new-version -all 1
 
       - name: Set up keychain and signing
         script: |
@@ -44,9 +43,12 @@ workflows:
           keychain add-certificates
           PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PROFILES_HOME"
-          for profile in $(find "$CM_BUILD_DIR" -name "*.mobileprovision" 2>/dev/null); do
-            cp "$profile" "$PROFILES_HOME/$(uuidgen).mobileprovision"
-          done
+          PROFILE_PATH="$PROFILES_HOME/tribe.mobileprovision"
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
+          echo "Installed profile to $PROFILE_PATH"
+          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID xml1 -o - - | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')
+          echo "Profile UUID: $PROFILE_UUID"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
 
       - name: Build iOS
         script: |
@@ -54,7 +56,7 @@ workflows:
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
             --export-options-plist ios/ExportOptions.plist \
-            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG"
+            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG PROVISIONING_PROFILE=$PROFILE_UUID"
 
     artifacts:
       - build/ios/ipa/*.ipa
