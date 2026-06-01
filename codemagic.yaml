@@ -4,7 +4,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Codemagic  # must match exact name in Codemagic → Settings → Integrations
+      app_store_connect: Codemagic
 
     environment:
       ios_signing:
@@ -12,7 +12,7 @@ workflows:
         bundle_identifier: com.tribe.fitness
       vars:
         BUNDLE_ID: com.tribe.fitness
-        XCODE_WORKSPACE: ios/App/App.xcworkspace
+        XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
       node: 22.11.0
 
@@ -25,7 +25,6 @@ workflows:
           echo "VITE_SUPABASE_URL=$VITE_SUPABASE_URL" >> .env
           echo "VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY" >> .env
           echo "VITE_USDA_API_KEY=$VITE_USDA_API_KEY" >> .env
-          echo "VITE_PADDLE_PRICE_ID=$VITE_PADDLE_PRICE_ID" >> .env
 
       - name: Build web app
         script: npm run build
@@ -42,7 +41,7 @@ workflows:
       - name: Build iOS
         script: |
           xcode-project build-ipa \
-            --workspace "$XCODE_WORKSPACE" \
+            --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME"
 
     artifacts:
@@ -52,5 +51,5 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: true   # goes to TestFlight first so you can test
-        submit_to_app_store: false   # flip to true when ready for full release
+        submit_to_testflight: true
+        submit_to_app_store: false
