@@ -38,6 +38,9 @@ workflows:
           LATEST_BUILD=$(app-store-connect get-latest-testflight-build-number "$BUNDLE_ID" 2>/dev/null || echo "0")
           agvtool new-version -all $((LATEST_BUILD + 1))
 
+      - name: Set up code signing
+        script: xcode-project use-profiles --project "$XCODE_PROJECT"
+
       - name: Build iOS
         script: |
           cat > /Users/builder/export_options.plist << EOF
@@ -49,8 +52,6 @@ workflows:
             <string>app-store</string>
             <key>teamID</key>
             <string>W64Y4S5KNG</string>
-            <key>uploadBitcode</key>
-            <false/>
             <key>uploadSymbols</key>
             <true/>
           </dict>
