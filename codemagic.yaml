@@ -7,9 +7,6 @@ workflows:
       app_store_connect: Codemagic
 
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.tribe.fitness
       vars:
         BUNDLE_ID: com.tribe.fitness
         XCODE_PROJECT: ios/App/App.xcodeproj
@@ -38,14 +35,22 @@ workflows:
           LATEST_BUILD=$(app-store-connect get-latest-testflight-build-number "$BUNDLE_ID" 2>/dev/null || echo "0")
           agvtool new-version -all $((LATEST_BUILD + 1))
 
-      - name: Set up code signing
-        script: xcode-project use-profiles
+      - name: Set up keychain and signing
+        script: |
+          keychain initialize
+          keychain add-certificates
+          PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_HOME"
+          for profile in $(find "$CM_BUILD_DIR" -name "*.mobileprovision" 2>/dev/null); do
+            cp "$profile" "$PROFILES_HOME/$(uuidgen).mobileprovision"
+          done
 
       - name: Build iOS
         script: |
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
+            --scheme "$XCODE_SCHEME" \
+            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG"
 
     artifacts:
       - build/ios/ipa/*.ipa
