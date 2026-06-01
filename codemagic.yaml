@@ -44,7 +44,7 @@ workflows:
           PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PROFILES_HOME"
           PROFILE_PATH="$PROFILES_HOME/tribe.mobileprovision"
-          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
+          echo "$PROVISIONING_PROFILE_B64" | base64 --decode > "$PROFILE_PATH"
           echo "Installed profile to $PROFILE_PATH"
           PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID xml1 -o - - | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')
           echo "Profile UUID: $PROFILE_UUID"
