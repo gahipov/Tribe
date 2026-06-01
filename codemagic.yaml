@@ -50,23 +50,10 @@ workflows:
 
       - name: Build iOS
         script: |
-          cat > /Users/builder/export_options.plist <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>method</key><string>app-store</string>
-  <key>teamID</key><string>W64Y4S5KNG</string>
-  <key>signingStyle</key><string>manual</string>
-  <key>signingCertificate</key><string>Apple Distribution</string>
-  <key>provisioningProfiles</key><dict>
-    <key>com.tribe.fitness</key><string>Tribe app store</string>
-  </dict>
-</dict></plist>
-EOF
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
-            --export-options-plist /Users/builder/export_options.plist \
+            --export-options-plist ios/ExportOptions.plist \
             --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG"
 
     artifacts:
