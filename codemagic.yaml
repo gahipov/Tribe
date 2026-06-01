@@ -4,14 +4,12 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Apple API Key  # set this up in Codemagic settings
+      app_store_connect: Codemagic  # must match exact name in Codemagic → Settings → Integrations
 
     environment:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.tribe.fitness
-        certificate: Signing Certificate     # Codemagic creates this automatically
-        provisioning_profile: Provisioning Profile  # Codemagic creates this automatically
       vars:
         BUNDLE_ID: com.tribe.fitness
         XCODE_WORKSPACE: ios/App/App.xcworkspace
