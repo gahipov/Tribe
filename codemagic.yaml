@@ -10,6 +10,7 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.tribe.fitness
+        team_id: W64Y4S5KNG
       vars:
         BUNDLE_ID: com.tribe.fitness
         XCODE_WORKSPACE: ios/App/App.xcworkspace
