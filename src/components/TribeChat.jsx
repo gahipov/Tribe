@@ -114,7 +114,7 @@ export default function TribeChat({ tribe, open, onClose }) {
       <div
         className={cn("fixed bottom-0 left-0 right-0 z-[60] bg-card rounded-t-3xl flex flex-col transition-transform duration-300 ease-out",
           open ? "translate-y-0" : "translate-y-full")}
-        style={{ height: "88vh" }}
+        style={{ height: "88dvh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

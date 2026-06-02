@@ -89,7 +89,7 @@ export default function Feed() {
             data-reel
             data-index={i}
             className="snap-start flex-shrink-0 w-full flex items-center justify-center py-2 px-2"
-            style={{ height: "82vh" }}
+            style={{ height: "82dvh" }}
           >
             <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-xl">
               {post.post_type === "workout_plan" ? (

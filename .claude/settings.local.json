@@ -8,7 +8,16 @@
       "Bash(curl -s \"https://world.openfoodfacts.org/cgi/search.pl?search_terms=chicken+breast&search_simple=1&action=process&json=1&page_size=3\")",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(p.get\\('product_name','?'\\), '|', p.get\\('nutriments',{}\\).get\\('energy-kcal_100g','?'\\), 'kcal | P:', p.get\\('nutriments',{}\\).get\\('proteins_100g','?'\\), '| C:', p.get\\('nutriments',{}\\).get\\('carbohydrates_100g','?'\\), '| F:', p.get\\('nutriments',{}\\).get\\('fat_100g','?'\\)\\) for p in d.get\\('products',[]\\)]\")",
       "WebFetch(domain:world.openfoodfacts.org)",
-      "WebFetch(domain:api.nal.usda.gov)"
+      "WebFetch(domain:api.nal.usda.gov)",
+      "Bash(curl -s \"https://world.openfoodfacts.org/api/v0/product/6291056004027.json\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('status:', d.get\\('status'\\)\\); p=d.get\\('product',{}\\); print\\('name:', p.get\\('product_name'\\)\\); print\\('brands:', p.get\\('brands'\\)\\); n=p.get\\('nutriments',{}\\); print\\('kcal/100g:', n.get\\('energy-kcal_100g'\\), 'or', n.get\\('energy-kcal'\\)\\); print\\('protein:', n.get\\('proteins_100g'\\)\\); print\\('carbs:', n.get\\('carbohydrates_100g'\\)\\); print\\('fat:', n.get\\('fat_100g'\\)\\)\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\('status:',j.status\\); const p=j.product||{}; console.log\\('name:',p.product_name\\); const n=p.nutriments||{}; console.log\\('kcal_100g:',n['energy-kcal_100g'],'kcal:',n['energy-kcal']\\); console.log\\('protein:',n.proteins_100g,'carbs:',n.carbohydrates_100g,'fat:',n.fat_100g\\);}\\)\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); const deps={...p.dependencies,...p.devDependencies}; Object.keys\\(deps\\).filter\\(k=>k.includes\\('capacitor'\\)||k.includes\\('camera'\\)||k.includes\\('barcode'\\)\\).forEach\\(k=>console.log\\(k,deps[k]\\)\\)\")",
+      "Bash(curl -s \"https://api.upcitemdb.com/prod/trial/lookup?upc=6291056004027\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j,null,2\\)\\);}\\)\")",
+      "Bash(curl -s \"https://world.openfoodfacts.org/cgi/search.pl?code=6291056004027&action=process&json=1\")",
+      "Bash(node -e \"let d=''; process.stdin.on\\('data',c=>d+=c\\); process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\('count:',j.count\\); if\\(j.products&&j.products[0]\\){const p=j.products[0]; console.log\\('name:',p.product_name\\); console.log\\('kcal:',p.nutriments?.['energy-kcal_100g']\\);}}\\)\")",
+      "Bash(npm install *)"
     ]
   }
 }

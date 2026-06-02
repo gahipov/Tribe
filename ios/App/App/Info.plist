@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
@@ -47,5 +49,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Tribe needs camera access to let you take photos of your meals and post workout content.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tribe needs photo library access to let you upload workout photos and meal images.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Tribe needs permission to save photos to your library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tribe needs microphone access to record workout videos.</string>
 </dict>
 </plist>

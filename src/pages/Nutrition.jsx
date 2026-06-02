@@ -3,7 +3,7 @@ import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Loader2, UtensilsCrossed, TrendingUp, Calendar } from "lucide-react";
+import { Plus, Loader2, UtensilsCrossed, TrendingUp, Calendar, Sparkles } from "lucide-react";
 import MealCard from "../components/MealCard";
 import MealFormDialog from "../components/MealFormDialog";
 import FoodLookupDialog from "../components/FoodLookupDialog";
@@ -11,6 +11,8 @@ import NutritionHistory from "../components/NutritionHistory";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import NutritionInsights from "../components/NutritionInsights";
+import MealPlan from "../components/MealPlan";
 
 export default function Nutrition() {
   const [tab, setTab] = useState("today");
@@ -43,7 +45,7 @@ export default function Nutrition() {
   const totalC = todayMeals.reduce((s,m) => s+(m.carbs_g||0), 0);
   const totalF = todayMeals.reduce((s,m) => s+(m.fat_g||0), 0);
   const macroData = [{ name: "Protein", value: totalP, color: "hsl(175,85%,50%)" }, { name: "Carbs", value: totalC, color: "hsl(35,90%,60%)" }, { name: "Fat", value: totalF, color: "hsl(330,70%,55%)" }].filter(d => d.value > 0);
-  const TABS = [{ id: "today", label: "Today", icon: Calendar }, { id: "history", label: "Trends", icon: TrendingUp }];
+  const TABS = [{ id: "today", label: "Today", icon: Calendar }, { id: "plan", label: "Plan", icon: Sparkles }, { id: "history", label: "Trends", icon: TrendingUp }];
 
   // Goals from profile
   const calGoal = user?.calorie_goal || 2000;
@@ -87,6 +89,11 @@ export default function Nutrition() {
         </div>
       </div>
       {tab === "today" && (<>
+        <NutritionInsights
+          today={{ calories: totalCals, protein: Math.round(totalP), carbs: Math.round(totalC), fat: Math.round(totalF) }}
+          goals={{ calories: calGoal, protein: pGoal, carbs: cGoal, fat: fGoal }}
+          mealsCount={todayMeals.length}
+        />
         <div className="mx-4 mt-4 bg-card rounded-2xl border border-border p-4">
           {/* Calorie bar */}
           <div className="flex items-center justify-between mb-2">
@@ -120,6 +127,12 @@ export default function Nutrition() {
           : todayMeals.map(m => <MealCard key={m.id} meal={m} onEdit={m => { setEditMeal(m); setFormOpen(true); }} onDelete={setDeleteTarget}/>)}
         </div>
       </>)}
+      {tab === "plan" && (
+        <MealPlan
+          goals={{ calories: calGoal, protein: pGoal, carbs: cGoal, fat: fGoal }}
+          todayMeals={todayMeals}
+        />
+      )}
       {tab === "history" && <div className="p-4">{meals.length===0 ? <div className="text-center py-20"><TrendingUp className="h-10 w-10 text-primary/50 mx-auto mb-3"/><p className="text-sm text-muted-foreground">Log meals to see your trends</p></div> : <NutritionHistory meals={meals}/>}</div>}
       <FoodLookupDialog open={lookupOpen} onClose={() => setLookupOpen(false)} onSelect={food => { setPrefill(food); setEditMeal(null); setFormOpen(true); }}/>
       <MealFormDialog open={formOpen} onOpenChange={v => { setFormOpen(v); if(!v) setPrefill(null); }} editMeal={editMeal} prefill={prefill}/>

@@ -48,6 +48,10 @@ export const AuthProvider = ({ children }) => {
     if (data) setProfile(data);
   };
 
+  const refreshProfile = async () => {
+    if (user?.id) await fetchProfile(user.id);
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -97,6 +101,7 @@ export const AuthProvider = ({ children }) => {
       checkUserAuth,
       checkAppState,
       updateProfile,
+      refreshProfile,
     }}>
       {children}
     </AuthContext.Provider>

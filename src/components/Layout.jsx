@@ -13,11 +13,11 @@ const navItems = [
 export default function Layout() {
   const { pathname } = useLocation();
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden">
+    <div className="bg-background flex flex-col overflow-hidden" style={{ height: "100dvh", paddingTop: "env(safe-area-inset-top)" }}>
       <main className={pathname === "/" ? "flex-1 overflow-hidden" : "flex-1 overflow-y-auto pb-20"}>
         <Outlet />
       </main>
-      <nav className="bg-card/95 backdrop-blur-xl border-t border-border z-50 flex-shrink-0">
+      <nav className="bg-card/95 backdrop-blur-xl border-t border-border z-50 flex-shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="max-w-lg mx-auto flex items-center justify-around py-2 px-2">
           {navItems.map(({ path, icon: Icon, label }) => {
             const active = path === "/" ? pathname === "/" : pathname.startsWith(path);

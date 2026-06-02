@@ -37,74 +37,58 @@ serve(async (req) => {
     }
 
     // ── 2. Parse body ──
-    const { image_base64, media_type } = await req.json();
-    if (!image_base64 || !media_type) {
-      return new Response(JSON.stringify({ error: "image_base64 and media_type required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const { image_base64, media_type, hint } = await req.json();
+    if (!image_base64 && !hint) {
+      return new Response(JSON.stringify({ error: "Provide an image or a text description" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    if (image_base64.length > 7_000_000) {
+    if (image_base64 && image_base64.length > 7_000_000) {
       return new Response(JSON.stringify({ error: "Image too large. Use a photo under 5MB." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // ── 3. Call GPT-4o ──
+    // ── 3. Call GPT-4o (with image) or GPT-4o-mini (text only) ──
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiKey) {
       return new Response(JSON.stringify({ error: "OpenAI API key not configured on server" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const jsonSchema = `Return ONLY this JSON (no markdown, no extra text):
+{
+  "name": "specific food name",
+  "serving_size": "estimated total portion e.g. 250g",
+  "calories": <total kcal as number>,
+  "protein_g": <grams as number>,
+  "carbs_g": <grams as number>,
+  "fat_g": <grams as number>,
+  "confidence": "high" or "medium" or "low",
+  "notes": "brief note if relevant"
+}`;
+
+    // Build message content — photo + text, photo only, or text only
+    let userContent: any;
+    if (image_base64 && media_type) {
+      userContent = [
+        { type: "image_url", image_url: { url: `data:${media_type};base64,${image_base64}`, detail: "low" } },
+        { type: "text", text: `Analyze the food in this image. Estimate nutritional content for the ENTIRE portion visible.${hint ? `\n\nUser says: "${hint}" — use this to improve accuracy.` : ""}\n\n${jsonSchema}\n\nIf no food visible: {"error": "No food detected in image"}` },
+      ];
+    } else {
+      userContent = `Estimate the nutritional content for: "${hint}".\n\nAssume a standard single serving unless a quantity is specified.\n\n${jsonSchema}`;
     }
 
     const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: image_base64 ? "gpt-4o" : "gpt-4o-mini",
         max_tokens: 300,
         messages: [
-          {
-            role: "system",
-            content: "You are a precise nutrition analyst. Return valid JSON only — no markdown, no explanation.",
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${media_type};base64,${image_base64}`,
-                  detail: "low",
-                },
-              },
-              {
-                type: "text",
-                text: `Analyze the food in this image. Estimate nutritional content for the ENTIRE portion visible.
-
-Return ONLY this JSON (no markdown, no extra text):
-{
-  "name": "specific food name",
-  "serving_size": "estimated total portion e.g. 250g",
-  "calories": <total kcal>,
-  "protein_g": <grams>,
-  "carbs_g": <grams>,
-  "fat_g": <grams>,
-  "confidence": "high" or "medium" or "low",
-  "notes": "brief note if relevant"
-}
-
-If no food visible: {"error": "No food detected in image"}`,
-              },
-            ],
-          },
+          { role: "system", content: "You are a precise nutrition analyst. Return valid JSON only — no markdown, no explanation." },
+          { role: "user", content: userContent },
         ],
       }),
     });

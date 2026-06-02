@@ -54,7 +54,7 @@ export default function WorkoutFormDialog({ open, onOpenChange, editWorkout }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card border-border max-w-md max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle className="font-heading">{editWorkout ? "Edit Workout" : "Log Workout"}</DialogTitle></DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="flex gap-3">

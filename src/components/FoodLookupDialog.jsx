@@ -3,11 +3,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Search, PenLine, ArrowRight, X, Barcode, ChevronRight, CheckCircle2, Camera, Sparkles } from "lucide-react";
+import { Loader2, Search, PenLine, ArrowRight, X, Barcode, CheckCircle2, Camera, Sparkles, Heart, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useUpgradeModal } from "@/components/PremiumGate";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const USDA_KEY = import.meta.env.VITE_USDA_API_KEY || "DEMO_KEY";
 
@@ -86,7 +87,8 @@ async function lookupBarcode(barcode) {
 }
 
 const METHODS = [
-  { id: "ai", label: "AI Photo", icon: Sparkles, desc: "Snap & get macros" },
+  { id: "ai", label: "AI", icon: Sparkles, desc: "Text, photo, or both" },
+  { id: "saved", label: "Saved", icon: Heart, desc: "Your favorite meals" },
   { id: "search", label: "Search", icon: Search, desc: "USDA food database" },
   { id: "barcode", label: "Barcode", icon: Barcode, desc: "Scan product barcode" },
   { id: "manual", label: "Manual", icon: PenLine, desc: "Enter values yourself" },
@@ -102,53 +104,72 @@ function MacroBadge({ label, value, color }) {
 }
 
 export default function FoodLookupDialog({ open, onClose, onSelect }) {
-  const { isPremium } = useAuth();
+  const { user, isPremium } = useAuth();
+  const queryClient = useQueryClient();
   const { openUpgrade, UpgradeModal } = useUpgradeModal("AI Photo Meal Logging");
+
+  const { data: savedMeals = [] } = useQuery({
+    queryKey: ["saved_meals"],
+    queryFn: async () => {
+      const { data } = await supabase.from("saved_meals").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const deleteSaved = async (id) => {
+    await supabase.from("saved_meals").delete().eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["saved_meals"] });
+  };
   const [method, setMethod] = useState(null);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState("");
   const [barcode, setBarcode] = useState("");
+  const [aiHint, setAiHint] = useState("");
+  const [aiPhoto, setAiPhoto] = useState(null); // { file, previewUrl, base64, mediaType }
   const [error, setError] = useState("");
   const fileRef = useRef(null);
   const aiFileRef = useRef(null);
 
-  const reset = () => { setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setLoading(false); setError(""); };
+  const reset = () => { setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
   const handleClose = () => { reset(); onClose(); };
 
-  const handleAIPhoto = async (e) => {
+  const handleAIPhotoSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { setError("Please select an image file."); return; }
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    setAiPhoto({ file, previewUrl: URL.createObjectURL(file), base64, mediaType: file.type });
+    setError("");
+  };
 
+  const analyzeAI = async () => {
+    if (!aiHint.trim() && !aiPhoto) { setError("Add a photo or describe what you're eating."); return; }
     setLoading(true); setError(""); setSelected(null);
     try {
-      // Convert to base64
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      // Call Edge Function via direct fetch so we can read the raw error body
       const { data: { session } } = await supabase.auth.getSession();
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-food-photo`;
-      const fnRes = await fetch(fnUrl, {
+      const fnRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-food-photo`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
           "Content-Type": "application/json",
           "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ image_base64: base64, media_type: file.type }),
+        body: JSON.stringify({
+          image_base64: aiPhoto?.base64 || undefined,
+          media_type: aiPhoto?.mediaType || undefined,
+          hint: aiHint.trim() || undefined,
+        }),
       });
-
       const data = await fnRes.json();
-      console.log("Edge fn response:", fnRes.status, data);
       if (!fnRes.ok || data?.error) throw new Error(data?.error || `HTTP ${fnRes.status}`);
-
       setSelected({
         name: data.name || "Unknown food",
         serving_size: data.serving_size || "1 serving",
@@ -185,7 +206,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
     try {
       const res = await lookupBarcode(code);
       if (res) setSelected(res);
-      else setError("Product not found. Try manual entry.");
+      else setError("not_found");
     } catch {
       setError("Lookup failed.");
     }
@@ -195,32 +216,39 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const handleBarcodeFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if ("BarcodeDetector" in window) {
-      setLoading(true);
-      try {
-        const bitmap = await createImageBitmap(file);
-        const detector = new window.BarcodeDetector();
-        const codes = await detector.detect(bitmap);
-        if (codes.length > 0) {
-          setBarcode(codes[0].rawValue);
-          const res = await lookupBarcode(codes[0].rawValue);
-          if (res) { setSelected(res); setLoading(false); return; }
-        }
-        setError("No barcode detected. Enter it manually below.");
-      } catch {
-        setError("Could not read barcode. Enter it manually.");
+    setLoading(true); setError("");
+    try {
+      const { BrowserMultiFormatReader } = await import("@zxing/library");
+      const reader = new BrowserMultiFormatReader();
+      const imgUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise(r => { img.onload = r; img.onerror = r; });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      URL.revokeObjectURL(imgUrl);
+      let code;
+      try { code = reader.decodeFromCanvas(canvas).getText(); } catch { code = null; }
+      if (code) {
+        setBarcode(code);
+        const res = await lookupBarcode(code);
+        if (res) { setSelected(res); setLoading(false); return; }
+        else setError("not_found");
+      } else {
+        setError("No barcode detected. Enter the number manually below.");
       }
-      setLoading(false);
-    } else {
-      setError("Auto-scan not supported in this browser. Enter barcode number manually.");
+    } catch {
+      setError("Could not read barcode. Enter the number manually.");
     }
+    setLoading(false);
   };
 
   const editField = (key, val) => setSelected(s => ({ ...s, [key]: parseFloat(val) || 0 }));
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="bg-card border-border max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-card border-border max-w-md max-h-[90dvh] overflow-y-auto">
         <UpgradeModal />
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
@@ -235,57 +263,78 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
 
         {/* Method picker */}
         {!method && (
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          <div className="space-y-2 pt-2">
             {METHODS.map(m => (
               <button key={m.id} onClick={() => m.id === "ai" && !isPremium ? openUpgrade() : setMethod(m.id)}
-                className={cn("bg-secondary hover:bg-secondary/80 rounded-2xl p-3 flex flex-col items-center gap-2 text-center transition-colors border hover:border-primary/30",
+                className={cn("w-full bg-secondary hover:bg-secondary/80 rounded-2xl px-3 py-2.5 flex items-center gap-3 transition-colors border hover:border-primary/30",
                   m.id === "ai" ? "border-primary/40 bg-primary/5" : "border-transparent")}>
-                <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", m.id === "ai" ? "bg-primary/20" : "bg-primary/10")}>
-                  <m.icon className={cn("h-5 w-5", m.id === "ai" ? "text-primary" : "text-primary")} />
+                <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0", m.id === "ai" ? "bg-primary/20" : "bg-primary/10")}>
+                  <m.icon className="h-4.5 w-4.5 text-primary" />
                 </div>
-                <div>
-                  <p className="font-heading font-semibold text-sm">{m.label}</p>
-                  {m.id === "ai" && <span className="text-[9px] text-primary font-medium uppercase tracking-wider">{isPremium ? "Fastest" : "Pro"}</span>}
-                  <p className="text-[10px] text-muted-foreground leading-tight">{m.desc}</p>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <p className="font-heading font-semibold text-sm">{m.label}</p>
+                    {m.id === "ai" && <span className="text-[9px] text-primary font-medium uppercase tracking-wider bg-primary/10 px-1.5 py-0.5 rounded-full">{isPremium ? "Fastest" : "Pro"}</span>}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">{m.desc}</p>
                 </div>
               </button>
             ))}
           </div>
         )}
 
-        {/* AI Photo */}
+        {/* AI */}
         {method === "ai" && !selected && (
-          <div className="space-y-4 pt-2">
-            <input ref={aiFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAIPhoto} />
+          <div className="space-y-3 pt-2">
+            <input ref={aiFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAIPhotoSelect} />
             {loading ? (
               <div className="flex flex-col items-center gap-3 py-10">
-                <div className="relative">
-                  <Sparkles className="h-10 w-10 text-primary animate-pulse" />
-                </div>
+                <Sparkles className="h-10 w-10 text-primary animate-pulse" />
                 <p className="font-heading font-semibold text-sm">Analyzing your meal…</p>
                 <p className="text-xs text-muted-foreground">GPT-4o is estimating macros</p>
               </div>
             ) : (
               <>
-                <div
-                  onClick={() => aiFileRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-3 py-10 border-2 border-dashed border-primary/30 rounded-2xl cursor-pointer hover:border-primary/60 hover:bg-primary/5 transition-colors"
-                >
-                  <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <Camera className="h-7 w-7 text-primary" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-heading font-semibold">Take a photo of your meal</p>
-                    <p className="text-xs text-muted-foreground mt-1">Or tap to choose from gallery</p>
-                  </div>
+                {/* Text input */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Describe what you're eating</p>
+                  <Input
+                    placeholder='e.g. "grilled chicken with rice, about 300g"'
+                    value={aiHint}
+                    onChange={e => setAiHint(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && analyzeAI()}
+                    className="bg-secondary border-border text-sm"
+                    autoFocus
+                  />
                 </div>
-                <div className="bg-secondary rounded-xl p-3 space-y-1">
-                  <p className="text-xs font-heading font-semibold text-foreground">Tips for best results</p>
-                  <p className="text-[11px] text-muted-foreground">• Good lighting, food fills the frame</p>
-                  <p className="text-[11px] text-muted-foreground">• Separate dishes get better estimates</p>
-                  <p className="text-[11px] text-muted-foreground">• Always review and adjust before logging</p>
-                </div>
+
+                {/* Photo attachment */}
+                {aiPhoto ? (
+                  <div className="relative rounded-2xl overflow-hidden">
+                    <img src={aiPhoto.previewUrl} alt="meal" className="w-full h-36 object-cover" />
+                    <button
+                      onClick={() => setAiPhoto(null)}
+                      className="absolute top-2 right-2 h-6 w-6 rounded-full bg-black/60 flex items-center justify-center text-white">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => aiFileRef.current?.click()}
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl border-2 border-dashed border-border hover:border-primary/40 hover:bg-primary/5 transition-colors text-muted-foreground">
+                    <Camera className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-sm">Add a photo <span className="text-xs opacity-60">(optional)</span></span>
+                  </button>
+                )}
+
                 {error && <p className="text-xs text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">{error}</p>}
+
+                <Button
+                  onClick={analyzeAI}
+                  disabled={!aiHint.trim() && !aiPhoto}
+                  className="w-full font-heading font-semibold rounded-2xl">
+                  <Sparkles className="h-4 w-4 mr-2" />Analyze
+                </Button>
               </>
             )}
           </div>
@@ -365,7 +414,15 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               </Button>
             </div>
-            {error && <p className="text-xs text-amber-400 bg-amber-400/10 px-3 py-2 rounded-lg">{error}</p>}
+            {error && error !== "not_found" && <p className="text-xs text-amber-400 bg-amber-400/10 px-3 py-2 rounded-lg">{error}</p>}
+            {error === "not_found" && (
+              <div className="bg-secondary rounded-xl p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">Product not in database. Enter nutrition values manually.</p>
+                <Button size="sm" className="w-full font-heading" onClick={() => { setSelected({ name: barcode, calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, serving_size: "100g" }); setError(""); }}>
+                  <PenLine className="h-3.5 w-3.5 mr-1.5" />Enter Manually
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -410,6 +467,33 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
                 <ArrowRight className="h-4 w-4 mr-2" />Log Food
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Saved meals */}
+        {method === "saved" && !selected && (
+          <div className="pt-2 space-y-2">
+            {savedMeals.length === 0 ? (
+              <div className="text-center py-10">
+                <Heart className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No saved meals yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Tap the ♡ on any logged meal to save it</p>
+              </div>
+            ) : savedMeals.map(m => (
+              <div key={m.id} className="flex items-center gap-3 bg-secondary rounded-2xl px-3 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-heading font-semibold truncate">{m.name}</p>
+                  <p className="text-xs text-muted-foreground">{m.calories} kcal · {m.protein_g}g P · {m.carbs_g}g C · {m.fat_g}g F</p>
+                </div>
+                <button onClick={() => deleteSaved(m.id)} className="p-1.5 text-muted-foreground hover:text-destructive transition-colors flex-shrink-0">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <button onClick={() => setSelected({ name: m.name, calories: m.calories, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, serving_size: m.serving_size })}
+                  className="p-1.5 text-primary hover:text-primary/80 transition-colors flex-shrink-0">
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

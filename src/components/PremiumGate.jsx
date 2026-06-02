@@ -1,51 +1,89 @@
 import { Sparkles, X, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { supabase } from "@/api/supabaseClient";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
+const CLIENT_TOKEN = import.meta.env.VITE_PADDLE_CLIENT_TOKEN;
 const PRICE_ID = import.meta.env.VITE_PADDLE_PRICE_ID;
+const PADDLE_ENV = import.meta.env.VITE_PADDLE_ENV;
 
-// Inline upgrade modal
+// Ref to call after checkout.completed — allows dynamic handler per open()
+const onCompleteRef = { current: null };
+
+function initPaddle() {
+  const paddle = window.Paddle;
+  if (!paddle || !CLIENT_TOKEN || paddle._initialized) return;
+  try {
+    if (PADDLE_ENV !== "production") paddle.Environment.set("sandbox");
+    paddle.Setup({
+      token: CLIENT_TOKEN,
+      eventCallback(event) {
+        if (event.name === "checkout.completed") {
+          onCompleteRef.current?.();
+        }
+      },
+    });
+    paddle._initialized = true;
+  } catch (e) {
+    console.error("Paddle init failed:", e);
+  }
+}
+
+function usePaddle() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (window.Paddle) { initPaddle(); setReady(true); return; }
+    // Paddle.js loads async — poll briefly
+    let tries = 0;
+    const t = setInterval(() => {
+      if (window.Paddle) { initPaddle(); setReady(true); clearInterval(t); }
+      if (++tries > 20) clearInterval(t);
+    }, 250);
+    return () => clearInterval(t);
+  }, []);
+  return ready;
+}
+
 function UpgradeModal({ open, onClose, feature }) {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
+  const paddleReady = usePaddle();
   const [loading, setLoading] = useState(false);
 
-  const handleUpgrade = async () => {
-    if (!PRICE_ID) {
-      toast.error("Paddle price not configured — add VITE_PADDLE_PRICE_ID to .env");
+  const handleUpgrade = () => {
+    if (!CLIENT_TOKEN || !PRICE_ID) {
+      toast.error("Paddle not configured — add VITE_PADDLE_CLIENT_TOKEN and VITE_PADDLE_PRICE_ID to .env");
+      return;
+    }
+    if (!paddleReady || !window.Paddle) {
+      toast.error("Paddle failed to load. Check your connection.");
       return;
     }
     setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-paddle-checkout`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            price_id: PRICE_ID,
-            success_url: window.location.origin + "/?upgraded=1",
-            cancel_url: window.location.href,
-          }),
-        }
-      );
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url; // redirect to Stripe Checkout
-      } else {
-        throw new Error(data.error || "Failed to create checkout session");
+
+    // Set what happens after checkout.completed event fires
+    onCompleteRef.current = async () => {
+      onCompleteRef.current = null;
+      onClose();
+      toast.success("Welcome to Tribe Pro!");
+      // Poll until webhook fires and is_premium flips
+      for (let i = 0; i < 6; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        await refreshProfile();
       }
-    } catch (err) {
-      toast.error("Checkout error: " + err.message);
-      setLoading(false);
-    }
+    };
+
+    window.Paddle.Checkout.open({
+      items: [{ priceId: PRICE_ID, quantity: 1 }],
+      customer: { email: user?.email },
+      customData: { user_id: user?.id },
+      settings: {
+        displayMode: "overlay",
+        theme: "dark",
+      },
+    });
+
+    setLoading(false);
   };
 
   if (!open) return null;
@@ -71,9 +109,9 @@ function UpgradeModal({ open, onClose, feature }) {
             ))}
           </div>
           <div className="w-full">
-            <button onClick={handleUpgrade} disabled={loading}
+            <button onClick={handleUpgrade} disabled={loading || !paddleReady}
               className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-heading font-bold text-base disabled:opacity-60 flex items-center justify-center gap-2">
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Redirecting to Stripe…</> : "Upgrade to Pro — $8/mo"}
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Opening checkout…</> : "Upgrade to Pro — $8/mo"}
             </button>
             <p className="text-[11px] text-muted-foreground mt-2">Cancel anytime · 7-day free trial</p>
           </div>
@@ -83,7 +121,6 @@ function UpgradeModal({ open, onClose, feature }) {
   );
 }
 
-// Wrap any locked section
 export default function PremiumGate({ children, feature = "this feature", locked }) {
   const [showModal, setShowModal] = useState(false);
   if (!locked) return children;

@@ -70,6 +70,16 @@ serve(async (req) => {
     }
   }
 
+  // ── Subscription active/renewed → keep Pro ──
+  if (eventType === "subscription.updated" || eventType === "subscription.activated") {
+    const userId = data?.custom_data?.user_id;
+    const status = data?.status;
+    if (userId && status === "active") {
+      await supabase.from("profiles").update({ is_premium: true }).eq("id", userId);
+      console.log("Pro confirmed (subscription updated):", userId);
+    }
+  }
+
   // ── Subscription cancelled → revoke Pro ──
   if (eventType === "subscription.canceled") {
     const userId = data?.custom_data?.user_id;

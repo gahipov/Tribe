@@ -52,5 +52,13 @@
   }
   body {
     @apply bg-background text-foreground font-body;
+    /* Prevent bounce scroll on iOS */
+    overscroll-behavior: none;
+  }
+  /* Ensure the app never overflows the viewport */
+  html, body, #root {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
   }
 }
