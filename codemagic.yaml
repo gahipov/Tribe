@@ -37,7 +37,7 @@ workflows:
       - name: Set app version
         script: |
           cd ios/App
-          agvtool new-version -all 1
+          agvtool new-version -all $BUILD_NUMBER
 
       - name: Set up keychain and signing
         script: |
