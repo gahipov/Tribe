@@ -49,9 +49,7 @@ workflows:
           PROFILE_PATH="$PROFILES_HOME/tribe.mobileprovision"
           echo "$PROVISIONING_PROFILE_B64" | base64 --decode > "$PROFILE_PATH"
           echo "Installed profile to $PROFILE_PATH"
-          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID xml1 -o - - | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p')
-          echo "Profile UUID: $PROFILE_UUID"
-          echo "PROFILE_UUID=$PROFILE_UUID" >> $CM_ENV
+          xcode-project use-profiles --project "$XCODE_PROJECT"
 
       - name: Build iOS
         script: |
@@ -59,7 +57,7 @@ workflows:
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
             --export-options-plist ios/ExportOptions.plist \
-            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG CODE_SIGN_STYLE=Automatic"
+            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG"
 
     artifacts:
       - build/ios/ipa/*.ipa
