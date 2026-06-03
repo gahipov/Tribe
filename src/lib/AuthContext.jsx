@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
+import { getIsPremium } from '@/lib/revenueCat';
 
 const AuthContext = createContext();
 
@@ -12,6 +13,7 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [appPublicSettings] = useState({});
+  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     // Get initial session
@@ -46,10 +48,17 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = async (userId) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfile(data);
+    const premium = await getIsPremium();
+    setIsPremium(premium);
   };
 
   const refreshProfile = async () => {
     if (user?.id) await fetchProfile(user.id);
+  };
+
+  const refreshPremium = async () => {
+    const premium = await getIsPremium();
+    setIsPremium(premium);
   };
 
   const logout = async () => {
@@ -82,7 +91,6 @@ export const AuthProvider = ({ children }) => {
   const checkAppState = async () => { await checkUserAuth(); };
 
   const mergedUser = user ? { ...user, ...(profile || {}), email: user.email, id: user.id } : null;
-  const isPremium = !!(profile?.is_premium);
   const onboardingDone = !!(profile?.onboarding_done);
 
   return (
@@ -102,6 +110,7 @@ export const AuthProvider = ({ children }) => {
       checkAppState,
       updateProfile,
       refreshProfile,
+      refreshPremium,
     }}>
       {children}
     </AuthContext.Provider>
