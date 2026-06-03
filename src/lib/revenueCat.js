@@ -25,13 +25,21 @@ export async function getIsPremium() {
   }
 }
 
+export function isNative() {
+  return !!(window.Capacitor?.isNativePlatform?.());
+}
+
 export async function presentPaywall() {
+  if (!isNative()) {
+    // On web/localhost the native paywall can't run — signal caller to show fallback UI
+    return { paywallResult: 'WEB_FALLBACK' };
+  }
   const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
   try {
     const result = await RevenueCatUI.presentPaywallIfNeeded({
       requiredEntitlementIdentifier: ENTITLEMENT_ID,
     });
-    return result; // { paywallResult: 'PURCHASED' | 'RESTORED' | 'NOT_PRESENTED' | 'CANCELLED' | 'ERROR' }
+    return result;
   } catch (e) {
     console.error('Paywall failed:', e);
     return { paywallResult: 'ERROR' };

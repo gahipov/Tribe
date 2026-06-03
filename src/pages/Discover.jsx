@@ -60,6 +60,29 @@ export default function Discover() {
     enabled: !!user,
   });
 
+  const { data: incomingRequests = [] } = useQuery({
+    queryKey: ["incoming-buddy-requests"],
+    queryFn: async () => {
+      const { data: reqs } = await supabase.from('buddy_requests').select('*').eq('to_user_email', user.email).eq('status', 'pending');
+      if (!reqs?.length) return [];
+      const senderIds = reqs.map(r => r.from_user_id);
+      const { data: senderProfiles } = await supabase.from('profiles').select('id, full_name, profile_image, gym_name').in('id', senderIds);
+      const profileMap = Object.fromEntries((senderProfiles || []).map(p => [p.id, p]));
+      return reqs.map(r => ({ ...r, profiles: profileMap[r.from_user_id] || null }));
+    },
+    enabled: !!user,
+  });
+
+  const acceptRequestMutation = useMutation({
+    mutationFn: async (id) => { await supabase.from('buddy_requests').update({ status: 'accepted' }).eq('id', id); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["incoming-buddy-requests"] }); toast.success("Request accepted!"); },
+  });
+
+  const declineRequestMutation = useMutation({
+    mutationFn: async (id) => { await supabase.from('buddy_requests').update({ status: 'declined' }).eq('id', id); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["incoming-buddy-requests"] }); toast.success("Request declined"); },
+  });
+
   useEffect(() => { if (existingRequests.length > 0) setSentRequests(new Set(existingRequests.map(r => r.to_user_email))); }, [existingRequests]);
 
   const connectMutation = useMutation({
@@ -172,8 +195,11 @@ export default function Discover() {
         <h1 className="font-display text-xl font-bold tracking-tight mb-3">Discover</h1>
         <div className="flex gap-1 bg-secondary rounded-xl p-1 mb-3">
           {[{id:"buddies",label:"Buddies",Icon:Users},{id:"tribes",label:"Tribes",Icon:Shield},{id:"events",label:"Events",Icon:CalendarDays}].map(({id,label,Icon})=>(
-            <button key={id} onClick={()=>setTab(id)} className={"flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm font-heading font-medium transition-colors "+(tab===id?"bg-primary text-primary-foreground":"text-muted-foreground")}>
+            <button key={id} onClick={()=>setTab(id)} className={"flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm font-heading font-medium transition-colors relative "+(tab===id?"bg-primary text-primary-foreground":"text-muted-foreground")}>
               <Icon className="h-3.5 w-3.5"/>{label}
+              {id === "buddies" && incomingRequests.length > 0 && (
+                <span className="absolute top-0.5 right-2 h-4 w-4 rounded-full bg-destructive text-white text-[9px] font-bold flex items-center justify-center">{incomingRequests.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -197,6 +223,32 @@ export default function Discover() {
       {/* Buddies tab */}
       {tab === "buddies" && (
         <div className="p-4 space-y-3">
+          {/* Incoming requests */}
+          {incomingRequests.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-heading font-bold text-muted-foreground uppercase tracking-wider">Connection Requests · {incomingRequests.length}</p>
+              {incomingRequests.map(req => {
+                const sender = req.profiles;
+                return (
+                  <div key={req.id} className="bg-card rounded-2xl border border-primary/20 p-3 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {sender?.profile_image ? <img src={sender.profile_image} className="w-full h-full object-cover"/> : <Users className="h-5 w-5 text-primary"/>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-heading font-semibold truncate">{sender?.full_name || "Someone"}</p>
+                      {sender?.gym_name && <p className="text-[11px] text-muted-foreground truncate">{sender.gym_name}</p>}
+                      <p className="text-[11px] text-muted-foreground italic truncate">{req.message}</p>
+                    </div>
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      <button onClick={() => acceptRequestMutation.mutate(req.id)} className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center"><Check className="h-4 w-4"/></button>
+                      <button onClick={() => declineRequestMutation.mutate(req.id)} className="h-8 w-8 rounded-full bg-secondary text-muted-foreground flex items-center justify-center"><X className="h-4 w-4"/></button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="h-px bg-border"/>
+            </div>
+          )}
           {isLoading ? <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary"/></div>
           : usersWithDistance.length===0 ? <div className="text-center py-20"><div className="h-20 w-20 rounded-full bg-secondary mx-auto flex items-center justify-center mb-4"><Users className="h-10 w-10 text-primary/50"/></div><h3 className="font-heading font-semibold text-lg">No buddies found</h3><p className="text-sm text-muted-foreground mt-1">{myLocation&&radiusKm<999?"Try a wider radius":search?"Try a different search":"Invite friends to grow your tribe"}</p></div>
           : usersWithDistance.map(profile => (
