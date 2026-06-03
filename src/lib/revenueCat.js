@@ -39,8 +39,12 @@ export async function presentPaywall() {
 }
 
 export async function restorePurchases() {
-  const { customerInfo } = await Purchases.restorePurchases();
-  return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
+  try {
+    const { customerInfo } = await Purchases.restorePurchases();
+    return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
+  } catch {
+    return false;
+  }
 }
 
 export async function presentCustomerCenter() {
