@@ -59,7 +59,7 @@ workflows:
             --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME" \
             --export-options-plist ios/ExportOptions.plist \
-            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG PROVISIONING_PROFILE=$PROFILE_UUID"
+            --archive-xcargs "DEVELOPMENT_TEAM=W64Y4S5KNG PROVISIONING_PROFILE[sdk=iphoneos*]=$PROFILE_UUID"
 
     artifacts:
       - build/ios/ipa/*.ipa
