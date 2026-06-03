@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
+import { presentCustomerCenter, restorePurchases } from "@/lib/revenueCat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,7 +14,7 @@ import { ProBadge } from "@/components/PremiumGate";
 import { BarChart, Bar, XAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 export default function Profile() {
-  const { user, logout, updateProfile, isPremium } = useAuth();
+  const { user, logout, updateProfile, isPremium, refreshPremium } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -64,6 +65,16 @@ export default function Profile() {
     setSaving(true);
     await updateProfile(goals);
     toast.success("Goals updated!"); setSaving(false); setGoalsOpen(false);
+  };
+
+  const handleRestore = async () => {
+    const isNowPremium = await restorePurchases();
+    await refreshPremium();
+    if (isNowPremium) {
+      toast.success("Purchases restored!");
+    } else {
+      toast.info("No active subscription found.");
+    }
   };
 
   const handleImageUpload = async (e) => {
@@ -164,6 +175,25 @@ export default function Profile() {
             </div>
           </div>
         )}
+
+        {/* Subscription management */}
+        <div className="w-full mt-4">
+          {isPremium && (
+            <button
+              onClick={() => presentCustomerCenter()}
+              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
+            >
+              <Sparkles className="h-5 w-5 text-primary" />
+              <span className="text-sm font-medium">Manage Subscription</span>
+            </button>
+          )}
+          <button
+            onClick={handleRestore}
+            className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
+          >
+            <span className="text-sm text-muted-foreground">Restore Purchases</span>
+          </button>
+        </div>
 
         {posts.length > 0 && <div className="w-full mt-6"><p className="text-xs text-muted-foreground font-heading font-medium uppercase tracking-wider mb-3">Your Posts</p><div className="grid grid-cols-3 gap-1.5">{posts.filter(p => p.media_url).map(p => <div key={p.id} className="aspect-square rounded-xl overflow-hidden bg-secondary">{p.media_type==="video" ? <video src={p.media_url} className="w-full h-full object-cover" preload="metadata"/> : <img src={p.media_url} alt="" className="w-full h-full object-cover"/>}</div>)}</div></div>}
       </div>
