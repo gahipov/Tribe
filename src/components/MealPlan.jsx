@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Lock, RefreshCw, Plus, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Sparkles, Lock, RefreshCw, Plus, ChevronDown, ChevronUp, Loader2, ChevronRight } from "lucide-react";
+import { useUpgradeModal } from "@/components/PremiumGate";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -94,6 +95,7 @@ export default function MealPlan({ goals, todayMeals }) {
   const { user, isPremium } = useAuth();
   const queryClient = useQueryClient();
   const [enabled, setEnabled] = useState(false);
+  const { openUpgrade, UpgradeModal } = useUpgradeModal("AI Meal Planning");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["meal-plan", user?.id],
@@ -126,18 +128,21 @@ export default function MealPlan({ goals, todayMeals }) {
 
   if (!isPremium) {
     return (
-      <div className="m-4 bg-card rounded-2xl border border-border p-5 flex flex-col items-center text-center gap-3">
-        <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-          <Sparkles className="h-6 w-6 text-primary" />
-        </div>
-        <div>
-          <p className="font-heading font-bold text-sm">AI Meal Planning</p>
-          <p className="text-xs text-muted-foreground mt-1">Get a personalized daily meal plan built around your exact macro targets</p>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] font-heading font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full">
-          <Lock className="h-3 w-3" />Tribe Pro Feature
-        </div>
-      </div>
+      <>
+        <UpgradeModal />
+        <button onClick={openUpgrade} className="m-4 w-[calc(100%-2rem)] bg-card rounded-2xl border border-border p-5 flex flex-col items-center text-center gap-3 active:opacity-80 transition-opacity">
+          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Sparkles className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <p className="font-heading font-bold text-sm">AI Meal Planning</p>
+            <p className="text-xs text-muted-foreground mt-1">Get a personalized daily meal plan built around your exact macro targets</p>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] font-heading font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full">
+            <Lock className="h-3 w-3" />Unlock with Tribe Pro
+          </div>
+        </button>
+      </>
     );
   }
 

@@ -153,7 +153,7 @@ function DayCard({ day, planName, onStart, expanded, onToggle }) {
 }
 
 export default function BodybuildingPlan({ onStartWorkout }) {
-  const [expandedPlan, setExpandedPlan] = useState(0);
+  const [expandedPlan, setExpandedPlan] = useState(null);
   const [expandedDay, setExpandedDay] = useState(null);
 
   return (

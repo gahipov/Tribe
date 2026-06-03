@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { Sparkles, Zap, Lock } from "lucide-react";
+import { useUpgradeModal } from "@/components/PremiumGate";
 
 async function fetchContext(userId) {
   const today = new Date().toISOString().split("T")[0];
@@ -42,6 +43,7 @@ async function fetchContext(userId) {
 
 export default function NutritionInsights({ today, goals, mealsCount }) {
   const { user, isPremium } = useAuth();
+  const { openUpgrade, UpgradeModal } = useUpgradeModal("AI Nutrition Coach");
 
   const goalType = user?.calorie_goal <= 1800 ? "lose_fat"
     : user?.calorie_goal >= 2800 ? "build_muscle"
@@ -85,18 +87,21 @@ export default function NutritionInsights({ today, goals, mealsCount }) {
 
   if (!isPremium) {
     return (
-      <div className="mx-4 mt-3 bg-card rounded-2xl border border-border p-3 flex items-center gap-3">
-        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-          <Sparkles className="h-4 w-4 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-heading font-semibold text-foreground">AI Nutrition Coach</p>
-          <p className="text-[11px] text-muted-foreground">Personalized tips based on your goals & history</p>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] font-heading font-bold text-primary bg-primary/10 px-2 py-1 rounded-full flex-shrink-0">
-          <Lock className="h-3 w-3" />PRO
-        </div>
-      </div>
+      <>
+        <UpgradeModal />
+        <button onClick={openUpgrade} className="mx-4 mt-3 w-[calc(100%-2rem)] bg-card rounded-2xl border border-border p-3 flex items-center gap-3 active:opacity-80 transition-opacity">
+          <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="h-4 w-4 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-xs font-heading font-semibold text-foreground">AI Nutrition Coach</p>
+            <p className="text-[11px] text-muted-foreground">Personalized tips based on your goals & history</p>
+          </div>
+          <div className="flex items-center gap-1 text-[10px] font-heading font-bold text-primary bg-primary/10 px-2 py-1 rounded-full flex-shrink-0">
+            <Lock className="h-3 w-3" />PRO
+          </div>
+        </button>
+      </>
     );
   }
 

@@ -232,7 +232,7 @@ export default function PlanEditor({ open, onClose, editPlan = null }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col">
+    <div className="fixed inset-0 z-50 bg-background flex flex-col pt-safe pb-safe">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background/80 backdrop-blur-xl flex-shrink-0">
         <button

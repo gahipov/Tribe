@@ -11,13 +11,18 @@ function UpgradeModal({ open, onClose, feature }) {
 
   const handleUpgrade = async () => {
     setLoading(true);
-    onClose();
-    const result = await presentPaywall();
-    if (result.paywallResult === 'PURCHASED' || result.paywallResult === 'RESTORED') {
-      await refreshPremium();
-      toast.success("Welcome to Tribe Pro!");
+    try {
+      const result = await presentPaywall();
+      if (result.paywallResult === 'PURCHASED' || result.paywallResult === 'RESTORED') {
+        await refreshPremium();
+        toast.success("Welcome to Tribe Pro!");
+        onClose();
+      }
+    } catch (e) {
+      toast.error("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (!open) return null;
