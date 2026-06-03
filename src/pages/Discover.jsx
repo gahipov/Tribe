@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useState, useEffect } from "react";
-import { Loader2, MapPin, Users, Search, Navigation, Shield, Plus, X, UserPlus, Check, MessageCircle } from "lucide-react";
+import { Loader2, MapPin, Users, Search, Navigation, Shield, Plus, X, UserPlus, Check, MessageCircle, CalendarDays, Clock, Dumbbell, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -32,6 +32,9 @@ export default function Discover() {
   const [tribeDialogOpen, setTribeDialogOpen] = useState(false);
   const [joinedTribes, setJoinedTribes] = useState(new Set());
   const [selectedTribe, setSelectedTribe] = useState(null);
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
+  const [eventForm, setEventForm] = useState({ title: "", description: "", gym_name: "", event_date: "", event_time: "" });
+  const [rsvpedEvents, setRsvpedEvents] = useState(new Set());
   const queryClient = useQueryClient();
 
   useEffect(() => { if (user?.lat && user?.lng) setMyLocation({ lat: user.lat, lng: user.lng }); }, [user]);
@@ -117,12 +120,58 @@ export default function Discover() {
     onError: () => toast.error("Failed to leave tribe"),
   });
 
+  // Events
+  const { data: events = [], isLoading: eventsLoading } = useQuery({
+    queryKey: ["workout_events"],
+    queryFn: async () => {
+      const { data } = await supabase.from("workout_events").select("*, workout_event_rsvps(user_id, user_name, user_image)").gte("event_date", new Date().toISOString()).order("event_date", { ascending: true });
+      return data || [];
+    },
+  });
+
+  const { data: myRsvps = [] } = useQuery({
+    queryKey: ["my_rsvps"],
+    queryFn: async () => { const { data } = await supabase.from("workout_event_rsvps").select("event_id").eq("user_id", user.id); return data || []; },
+    enabled: !!user,
+  });
+  useEffect(() => { if (myRsvps.length) setRsvpedEvents(new Set(myRsvps.map(r => r.event_id))); }, [myRsvps]);
+
+  const createEventMutation = useMutation({
+    mutationFn: async () => {
+      const event_date = new Date(`${eventForm.event_date}T${eventForm.event_time || "09:00"}`).toISOString();
+      const { error } = await supabase.from("workout_events").insert({ title: eventForm.title, description: eventForm.description, gym_name: eventForm.gym_name, event_date, creator_id: user.id, creator_name: user.full_name || user.email, creator_image: user.profile_image || "" });
+      if (error) throw error;
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["workout_events"] }); toast.success("Event created!"); setEventForm({ title: "", description: "", gym_name: "", event_date: "", event_time: "" }); setEventDialogOpen(false); },
+    onError: (e) => toast.error("Failed: " + e.message),
+  });
+
+  const rsvpMutation = useMutation({
+    mutationFn: async (eventId) => {
+      const { error } = await supabase.from("workout_event_rsvps").insert({ event_id: eventId, user_id: user.id, user_name: user.full_name || user.email, user_image: user.profile_image || "" });
+      if (error) throw error;
+    },
+    onSuccess: (_, eventId) => { setRsvpedEvents(prev => new Set([...prev, eventId])); queryClient.invalidateQueries({ queryKey: ["workout_events"] }); toast.success("You're in!"); },
+  });
+
+  const cancelRsvpMutation = useMutation({
+    mutationFn: async (eventId) => {
+      await supabase.from("workout_event_rsvps").delete().eq("event_id", eventId).eq("user_id", user.id);
+    },
+    onSuccess: (_, eventId) => { setRsvpedEvents(prev => { const n = new Set(prev); n.delete(eventId); return n; }); queryClient.invalidateQueries({ queryKey: ["workout_events"] }); toast.success("RSVP cancelled"); },
+  });
+
+  const deleteEventMutation = useMutation({
+    mutationFn: async (eventId) => { await supabase.from("workout_events").delete().eq("id", eventId); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["workout_events"] }); toast.success("Event deleted"); },
+  });
+
   return (
     <div className="max-w-lg mx-auto">
       <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl px-4 py-4 border-b border-border">
         <h1 className="font-display text-xl font-bold tracking-tight mb-3">Discover</h1>
         <div className="flex gap-1 bg-secondary rounded-xl p-1 mb-3">
-          {[{id:"buddies",label:"Gym Buddies",Icon:Users},{id:"tribes",label:"Tribes",Icon:Shield}].map(({id,label,Icon})=>(
+          {[{id:"buddies",label:"Buddies",Icon:Users},{id:"tribes",label:"Tribes",Icon:Shield},{id:"events",label:"Events",Icon:CalendarDays}].map(({id,label,Icon})=>(
             <button key={id} onClick={()=>setTab(id)} className={"flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-sm font-heading font-medium transition-colors "+(tab===id?"bg-primary text-primary-foreground":"text-muted-foreground")}>
               <Icon className="h-3.5 w-3.5"/>{label}
             </button>
@@ -235,6 +284,103 @@ export default function Discover() {
                     >
                       <MessageCircle className="h-3 w-3"/>Chat
                     </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Events tab */}
+      {tab === "events" && (
+        <div className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{events.length} upcoming event{events.length !== 1 ? "s" : ""}</p>
+            <Dialog open={eventDialogOpen} onOpenChange={setEventDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="rounded-full font-heading"><Plus className="h-4 w-4 mr-1"/>Create Event</Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-border max-w-sm">
+                <DialogHeader><DialogTitle className="font-heading">New Workout Event</DialogTitle></DialogHeader>
+                <div className="space-y-3 pt-2">
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Title *</Label><Input value={eventForm.title} onChange={e=>setEventForm(f=>({...f,title:e.target.value}))} placeholder="Chest & Back Session" className="bg-secondary border-border"/></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><Label className="text-xs text-muted-foreground mb-1.5 block">Date *</Label><Input type="date" value={eventForm.event_date} onChange={e=>setEventForm(f=>({...f,event_date:e.target.value}))} className="bg-secondary border-border"/></div>
+                    <div><Label className="text-xs text-muted-foreground mb-1.5 block">Time</Label><Input type="time" value={eventForm.event_time} onChange={e=>setEventForm(f=>({...f,event_time:e.target.value}))} className="bg-secondary border-border"/></div>
+                  </div>
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Gym / Location</Label><Input value={eventForm.gym_name} onChange={e=>setEventForm(f=>({...f,gym_name:e.target.value}))} placeholder="Gold's Gym, Venice" className="bg-secondary border-border"/></div>
+                  <div><Label className="text-xs text-muted-foreground mb-1.5 block">Description</Label><Textarea value={eventForm.description} onChange={e=>setEventForm(f=>({...f,description:e.target.value}))} placeholder="What's the plan? All levels welcome!" className="bg-secondary border-border resize-none" rows={2}/></div>
+                  <Button onClick={()=>createEventMutation.mutate()} disabled={!eventForm.title.trim()||!eventForm.event_date||createEventMutation.isPending} className="w-full font-heading">
+                    {createEventMutation.isPending?<Loader2 className="h-4 w-4 animate-spin mr-2"/>:null}Create Event
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {eventsLoading ? <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary"/></div>
+          : events.length === 0 ? (
+            <div className="text-center py-20">
+              <CalendarDays className="h-16 w-16 text-primary/20 mx-auto mb-3"/>
+              <h3 className="font-heading font-semibold">No events yet</h3>
+              <p className="text-sm text-muted-foreground mt-1">Create the first group workout</p>
+            </div>
+          ) : events.map(event => {
+            const isGoing = rsvpedEvents.has(event.id);
+            const isCreator = event.creator_id === user?.id;
+            const date = new Date(event.event_date);
+            const rsvps = event.workout_event_rsvps || [];
+            const dateStr = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+            const timeStr = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            return (
+              <div key={event.id} className="bg-card rounded-2xl border border-border overflow-hidden">
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Dumbbell className="h-4 w-4 text-primary"/>
+                        </div>
+                        <div>
+                          <p className="font-heading font-bold text-sm">{event.title}</p>
+                          <p className="text-[11px] text-muted-foreground">by {event.creator_name}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <span className="flex items-center gap-1 text-xs text-foreground bg-secondary px-2 py-1 rounded-full"><CalendarDays className="h-3 w-3 text-primary"/>{dateStr}</span>
+                        <span className="flex items-center gap-1 text-xs text-foreground bg-secondary px-2 py-1 rounded-full"><Clock className="h-3 w-3 text-primary"/>{timeStr}</span>
+                        {event.gym_name && <span className="flex items-center gap-1 text-xs text-foreground bg-secondary px-2 py-1 rounded-full"><MapPin className="h-3 w-3 text-primary"/>{event.gym_name}</span>}
+                      </div>
+                      {event.description && <p className="text-xs text-muted-foreground mt-2">{event.description}</p>}
+                      {rsvps.length > 0 && (
+                        <div className="flex items-center gap-1.5 mt-3">
+                          <div className="flex -space-x-1.5">
+                            {rsvps.slice(0,4).map((r,i) => (
+                              <div key={i} className="h-6 w-6 rounded-full bg-primary/20 border-2 border-card flex items-center justify-center text-[9px] font-bold text-primary overflow-hidden">
+                                {r.user_image ? <img src={r.user_image} className="w-full h-full object-cover"/> : (r.user_name?.[0]||"?")}
+                              </div>
+                            ))}
+                          </div>
+                          <span className="text-xs text-muted-foreground">{rsvps.length} going{rsvps.length > 4 ? ` · +${rsvps.length - 4} more` : ""}</span>
+                        </div>
+                      )}
+                    </div>
+                    {isCreator && (
+                      <button onClick={() => deleteEventMutation.mutate(event.id)} className="text-muted-foreground hover:text-destructive transition-colors p-1"><X className="h-4 w-4"/></button>
+                    )}
+                  </div>
+                </div>
+                <div className="px-4 pb-4">
+                  {!isCreator ? (
+                    <button
+                      onClick={() => isGoing ? cancelRsvpMutation.mutate(event.id) : rsvpMutation.mutate(event.id)}
+                      className={"w-full py-2 rounded-xl text-sm font-heading font-semibold transition-colors " + (isGoing ? "bg-secondary text-muted-foreground" : "bg-primary text-primary-foreground")}
+                    >
+                      {isGoing ? "✓ You're Going · Cancel" : "I'm In"}
+                    </button>
+                  ) : (
+                    <div className="text-center text-xs text-muted-foreground py-1">Your event · {rsvps.length} RSVP{rsvps.length !== 1 ? "s" : ""}</div>
                   )}
                 </div>
               </div>
