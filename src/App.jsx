@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Onboarding from '@/components/Onboarding';
 import { useEffect } from 'react';
+import { initRevenueCat } from '@/lib/revenueCat';
 import { supabase } from '@/api/supabaseClient';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -20,7 +21,13 @@ import Discover from './pages/Discover';
 import Profile from './pages/Profile';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone } = useAuth();
+  const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone, user } = useAuth();
+
+  useEffect(() => {
+    if (user?.id) {
+      initRevenueCat(user.id);
+    }
+  }, [user?.id]);
 
   if (isLoadingAuth || !authChecked) {
     return (
