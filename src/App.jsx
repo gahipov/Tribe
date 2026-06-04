@@ -7,7 +7,8 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Onboarding from '@/components/Onboarding';
-import { useEffect, Component } from 'react';
+import TourOverlay from "@/components/TourOverlay";
+import { useEffect, Component, useState } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -45,6 +46,9 @@ class ErrorBoundary extends Component {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone } = useAuth();
+  const [showTour, setShowTour] = useState(
+    isAuthenticated && onboardingDone && !localStorage.getItem("tribe_tour_done")
+  );
 
   if (isLoadingAuth || !authChecked) {
     return (
@@ -59,22 +63,25 @@ const AuthenticatedApp = () => {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Feed />} />
-          <Route path="/workouts" element={<Workouts />} />
-          <Route path="/nutrition" element={<Nutrition />} />
-          <Route path="/discover" element={<Discover />} />
-          <Route path="/profile" element={<Profile />} />
+    <>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Feed />} />
+            <Route path="/workouts" element={<Workouts />} />
+            <Route path="/nutrition" element={<Nutrition />} />
+            <Route path="/discover" element={<Discover />} />
+            <Route path="/profile" element={<Profile />} />
+          </Route>
         </Route>
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+      {showTour && <TourOverlay onDone={() => setShowTour(false)} />}
+    </>
   );
 };
 
