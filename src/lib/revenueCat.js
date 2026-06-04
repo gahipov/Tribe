@@ -38,16 +38,18 @@ export async function presentPaywall() {
   }
   if (!_rcConfigured) {
     console.warn('RevenueCat: not configured yet');
-    return { paywallResult: 'ERROR' };
+    return { result: 'ERROR' };
   }
   try {
+    // Pre-fetch offerings to ensure products are loaded before showing paywall
+    const { offerings } = await Purchases.getOfferings();
+    const offering = offerings?.current;
     const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
-    // Use presentPaywall (not IfNeeded) — simpler, fewer native failure modes
-    const result = await RevenueCatUI.presentPaywall();
-    return result ?? { paywallResult: 'CANCELLED' };
+    const result = await RevenueCatUI.presentPaywall(offering ? { offering } : undefined);
+    return result ?? { result: 'CANCELLED' };
   } catch (e) {
     console.error('Paywall failed:', e);
-    return { paywallResult: 'ERROR' };
+    return { result: 'ERROR' };
   }
 }
 
