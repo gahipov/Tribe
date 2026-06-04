@@ -10,43 +10,8 @@ import { toast } from "sonner";
 import { useUpload } from "@/lib/uploadContext";
 import { createTusUpload, getPublicUrl } from "@/lib/tusUpload";
 
-const MAX_VIDEO_DURATION = 60; // seconds
+const MAX_VIDEO_DURATION = 30; // seconds
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-
-let _ffmpegInstance = null;
-
-async function loadFfmpeg() {
-  if (_ffmpegInstance) return _ffmpegInstance;
-  const { FFmpeg } = await import("@ffmpeg/ffmpeg");
-  const { fetchFile, toBlobURL } = await import("@ffmpeg/util");
-  const ffmpeg = new FFmpeg();
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-  });
-  _ffmpegInstance = { ffmpeg, fetchFile };
-  return _ffmpegInstance;
-}
-
-async function compressVideo(file, onProgress) {
-  const { ffmpeg, fetchFile } = await loadFfmpeg();
-  ffmpeg.on("progress", ({ progress }) => onProgress(Math.round(progress * 100)));
-  await ffmpeg.writeFile("input.mp4", await fetchFile(file));
-  await ffmpeg.exec([
-    "-i", "input.mp4",
-    "-vf", "scale=-2:720",
-    "-c:v", "libx264",
-    "-crf", "28",
-    "-preset", "fast",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-movflags", "+faststart",
-    "output.mp4",
-  ]);
-  const data = await ffmpeg.readFile("output.mp4");
-  return new File([data.buffer], "compressed.mp4", { type: "video/mp4" });
-}
 
 function checkVideoDuration(file) {
   return new Promise((resolve, reject) => {
@@ -67,12 +32,10 @@ export default function CreatePostDialog() {
   const [mediaFile, setMediaFile] = useState(null);
   const [mediaPreview, setMediaPreview] = useState(null);
   const [mediaType, setMediaType] = useState("image");
-  const [compressing, setCompressing] = useState(false);
-  const [compressProgress, setCompressProgress] = useState(0);
   const fileInputRef = useRef(null);
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { startUpload, setCompressing: setGlobalCompressing, onUploadProgress, onSuccess, onError } = useUpload();
+  const { startUpload, onUploadProgress, onSuccess, onError } = useUpload();
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -82,7 +45,7 @@ export default function CreatePostDialog() {
       try {
         const duration = await checkVideoDuration(file);
         if (duration > MAX_VIDEO_DURATION) {
-          toast.error("Videos must be 60 seconds or less.");
+          toast.error("Videos must be 30 seconds or less.");
           if (fileInputRef.current) fileInputRef.current.value = "";
           return;
         }
@@ -110,43 +73,22 @@ export default function CreatePostDialog() {
   const handlePost = async () => {
     if (!content && !mediaFile) return;
 
-    let fileToUpload = mediaFile;
-
-    // Compress video before upload
-    if (mediaFile && mediaType === "video") {
-      setCompressing(true);
-      setCompressProgress(0);
-      try {
-        fileToUpload = await compressVideo(mediaFile, (pct) => {
-          setCompressProgress(pct);
-          setGlobalCompressing(pct);
-        });
-      } catch (err) {
-        setCompressing(false);
-        toast.error("Compression failed. Try a shorter video.");
-        return;
-      }
-      setCompressing(false);
-    }
-
-    // Check compressed size
-    if (fileToUpload && fileToUpload.size > MAX_FILE_SIZE) {
-      toast.error("Video is too large (max 50MB). Trim it and try again.");
+    if (mediaFile && mediaFile.size > MAX_FILE_SIZE) {
+      toast.error("File is too large (max 50MB).");
       return;
     }
 
-    // Build the post row — we need the media_url before inserting
-    const ext = fileToUpload ? (mediaType === "video" ? "mp4" : fileToUpload.name.split(".").pop()) : null;
-    const objectPath = fileToUpload ? `${user.id}/${Date.now()}.${ext}` : null;
+    const ext = mediaFile ? (mediaType === "video" ? mediaFile.name.split(".").pop() || "mp4" : mediaFile.name.split(".").pop()) : null;
+    const objectPath = mediaFile ? `${user.id}/${Date.now()}.${ext}` : null;
     const media_url = objectPath ? getPublicUrl(objectPath) : null;
 
-    // Close dialog and hand off to background
+    // Close dialog immediately
     setOpen(false);
     setContent("");
     setMediaFile(null);
     setMediaPreview(null);
 
-    if (!fileToUpload) {
+    if (!mediaFile) {
       // Text-only post — insert directly
       const { error } = await supabase.from("posts").insert({
         content,
@@ -165,7 +107,7 @@ export default function CreatePostDialog() {
     }
 
     // Start background TUS upload — insert post row only after upload succeeds
-    const { start } = createTusUpload(fileToUpload, objectPath, {
+    const { start } = createTusUpload(mediaFile, objectPath, {
       onProgress: onUploadProgress,
       onSuccess: async () => {
         const { error: insertError } = await supabase.from("posts").insert({
@@ -218,30 +160,17 @@ export default function CreatePostDialog() {
           ) : (
             <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
               <Image className="h-6 w-6 text-muted-foreground mb-1" />
-              <span className="text-sm text-muted-foreground">Add photo or video (max 60s)</span>
+              <span className="text-sm text-muted-foreground">Add photo or video (max 30s)</span>
               <input ref={fileInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleFileChange} />
             </label>
           )}
 
-          {compressing && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Compressing video…</span>
-                <span>{compressProgress}%</span>
-              </div>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${compressProgress}%` }} />
-              </div>
-            </div>
-          )}
-
           <Button
             onClick={handlePost}
-            disabled={compressing || (!content && !mediaFile)}
+            disabled={!content && !mediaFile}
             className="w-full font-heading font-semibold"
           >
-            {compressing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {compressing ? `Compressing… ${compressProgress}%` : "Post to Tribe"}
+            Post to Tribe
           </Button>
         </div>
       </DialogContent>
