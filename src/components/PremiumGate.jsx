@@ -13,12 +13,12 @@ function UpgradeModal({ open, onClose, feature }) {
     setLoading(true);
     try {
       const result = await presentPaywall();
-      if (result.paywallResult === 'WEB_FALLBACK') {
+      if (result?.webFallback) {
         toast.info("Open the app on your iPhone to subscribe.");
         setLoading(false);
         return;
       }
-      if (result.paywallResult === 'PURCHASED' || result.paywallResult === 'RESTORED') {
+      if (result?.result === 'PURCHASED' || result?.result === 'RESTORED') {
         await refreshPremium();
         toast.success("Welcome to Tribe Pro!");
         onClose();

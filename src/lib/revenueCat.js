@@ -34,7 +34,7 @@ export function isNative() {
 
 export async function presentPaywall() {
   if (!isNative()) {
-    return { paywallResult: 'WEB_FALLBACK' };
+    return { webFallback: true };
   }
   if (!_rcConfigured) {
     console.warn('RevenueCat: not configured yet');
