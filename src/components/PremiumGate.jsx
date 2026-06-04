@@ -18,8 +18,9 @@ function UpgradeModal({ open, onClose, feature }) {
         setLoading(false);
         return;
       }
-      if (result?.result === 'PURCHASED' || result?.result === 'RESTORED') {
-        await refreshPremium();
+      // Always refresh premium after paywall closes — covers all result codes
+      const nowPremium = await refreshPremium();
+      if (result?.result === 'PURCHASED' || result?.result === 'RESTORED' || nowPremium) {
         toast.success("Welcome to Tribe Pro!");
         onClose();
       }

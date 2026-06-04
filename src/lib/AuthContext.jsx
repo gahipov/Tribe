@@ -60,6 +60,7 @@ export const AuthProvider = ({ children }) => {
   const refreshPremium = async () => {
     const premium = await getIsPremium();
     setIsPremium(premium);
+    return premium;
   };
 
   const logout = async () => {
