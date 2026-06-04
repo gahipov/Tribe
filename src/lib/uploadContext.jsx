@@ -9,9 +9,11 @@ export function UploadProvider({ children }) {
   const [progress, setProgress] = useState(0); // 0-100
   const [error, setError] = useState(null);
   const retryRef = useRef(null); // stores () => void to retry upload
+  const timerRef = useRef(null);
 
   const startUpload = useCallback((tusStartFn) => {
     // tusStartFn: () => void — call to begin/resume the TUS upload
+    clearTimeout(timerRef.current);
     retryRef.current = tusStartFn;
     setStatus("uploading");
     setProgress(0);
@@ -30,10 +32,11 @@ export function UploadProvider({ children }) {
   }, []);
 
   const onSuccess = useCallback(() => {
+    clearTimeout(timerRef.current);
     setStatus("success");
     setProgress(100);
     queryClientInstance.invalidateQueries({ queryKey: ["posts"] });
-    setTimeout(() => setStatus("idle"), 3000);
+    timerRef.current = setTimeout(() => setStatus("idle"), 3000);
   }, []);
 
   const onError = useCallback((err) => {

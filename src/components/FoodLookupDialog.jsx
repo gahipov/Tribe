@@ -154,10 +154,13 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         if (!available) {
           toast.info("Preparing scanner for first use…");
           await BarcodeScanner.installGoogleBarcodeScannerModule();
-          await new Promise((resolve) => {
-            BarcodeScanner.addListener("googleBarcodeScannerModuleInstallProgress", (event) => {
-              if (event.state === "COMPLETED") resolve();
+          await new Promise((resolve, reject) => {
+            let handle;
+            handle = BarcodeScanner.addListener("googleBarcodeScannerModuleInstallProgress", (event) => {
+              if (event.state === "COMPLETED") { handle.remove(); resolve(); }
+              if (event.state === "FAILED" || event.state === "CANCELED") { handle.remove(); reject(new Error("Module install failed")); }
             });
+            setTimeout(() => { handle.remove(); reject(new Error("Module install timed out")); }, 30000);
           });
         }
       }

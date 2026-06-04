@@ -13,7 +13,10 @@ import { createTusUpload, getPublicUrl } from "@/lib/tusUpload";
 const MAX_VIDEO_DURATION = 60; // seconds
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
+let _ffmpegInstance = null;
+
 async function loadFfmpeg() {
+  if (_ffmpegInstance) return _ffmpegInstance;
   const { FFmpeg } = await import("@ffmpeg/ffmpeg");
   const { fetchFile, toBlobURL } = await import("@ffmpeg/util");
   const ffmpeg = new FFmpeg();
@@ -22,7 +25,8 @@ async function loadFfmpeg() {
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
   });
-  return { ffmpeg, fetchFile };
+  _ffmpegInstance = { ffmpeg, fetchFile };
+  return _ffmpegInstance;
 }
 
 async function compressVideo(file, onProgress) {
@@ -160,24 +164,24 @@ export default function CreatePostDialog() {
       return;
     }
 
-    // Insert post row immediately (media_url is the eventual public URL)
-    const { error: insertError } = await supabase.from("posts").insert({
-      content,
-      media_url,
-      media_type: mediaType,
-      user_id: user.id,
-      author_name: user.full_name || user.email,
-      author_image: user.profile_image || "",
-    });
-    if (insertError) {
-      toast.error("Failed to create post.");
-      return;
-    }
-
-    // Start background TUS upload
+    // Start background TUS upload — insert post row only after upload succeeds
     const { start } = createTusUpload(fileToUpload, objectPath, {
       onProgress: onUploadProgress,
-      onSuccess,
+      onSuccess: async () => {
+        const { error: insertError } = await supabase.from("posts").insert({
+          content,
+          media_url,
+          media_type: mediaType,
+          user_id: user.id,
+          author_name: user.full_name || user.email,
+          author_image: user.profile_image || "",
+        });
+        if (insertError) {
+          onError(new Error("Failed to save post"));
+        } else {
+          onSuccess();
+        }
+      },
       onError,
     });
     startUpload(start);
