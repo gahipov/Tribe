@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback } from "react";
 import { queryClientInstance } from "@/lib/query-client";
 
-// status: 'idle' | 'compressing' | 'uploading' | 'success' | 'error'
+// status: 'idle' | 'uploading' | 'success' | 'error'
 const UploadContext = createContext(null);
 
 export function UploadProvider({ children }) {
@@ -19,11 +19,6 @@ export function UploadProvider({ children }) {
     setProgress(0);
     setError(null);
     tusStartFn();
-  }, []);
-
-  const setCompressing = useCallback((pct) => {
-    setStatus("compressing");
-    setProgress(pct);
   }, []);
 
   const onUploadProgress = useCallback((pct) => {
@@ -54,7 +49,7 @@ export function UploadProvider({ children }) {
   }, []);
 
   return (
-    <UploadContext.Provider value={{ status, progress, error, startUpload, setCompressing, onUploadProgress, onSuccess, onError, retry }}>
+    <UploadContext.Provider value={{ status, progress, error, startUpload, onUploadProgress, onSuccess, onError, retry }}>
       {children}
     </UploadContext.Provider>
   );
