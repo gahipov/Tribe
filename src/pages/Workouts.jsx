@@ -322,16 +322,20 @@ export default function Workouts() {
             sum + (w.exercises?.reduce((s, e) => s + (Number(e.sets)||0)*(Number(e.reps)||0)*(Number(e.weight_lbs)||0), 0) || 0), 0);
           const totalDuration = workouts.reduce((s, w) => s + (w.duration_minutes || 0), 0);
 
-          // Weekly frequency: last 8 weeks
+          // Weekly frequency: last 8 weeks with real date labels
           const now = new Date();
           const weeks = Array.from({ length: 8 }, (_, i) => {
             const weekStart = new Date(now);
             weekStart.setDate(now.getDate() - (7 * (7 - i)) - now.getDay());
             const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
-            const label = `W${8 - i}`;
+            const label = `${weekStart.getMonth()+1}/${weekStart.getDate()}`;
             const count = workouts.filter(w => { const d = new Date(w.date); return d >= weekStart && d < weekEnd; }).length;
             return { label, count };
           });
+
+          // Avg workouts per week (over weeks that have data)
+          const weeksWithData = weeks.filter(w => w.count > 0).length || 1;
+          const avgPerWeek = (totalWorkouts / Math.max(weeksWithData, 1)).toFixed(1);
 
           // Streak
           const sortedDates = [...new Set(workouts.map(w => w.date))].sort((a, b) => b.localeCompare(a));
@@ -343,13 +347,24 @@ export default function Workouts() {
             } else break;
           }
 
-          // Top exercises by volume
-          const exVolume = {};
+          // Per-exercise stats: volume + PR (max weight) + estimated 1RM (Epley: w*(1+r/30))
+          const exStats = {};
           workouts.forEach(w => w.exercises?.forEach(e => {
             const vol = (Number(e.sets)||0)*(Number(e.reps)||0)*(Number(e.weight_lbs)||0);
-            if (vol > 0) exVolume[e.name] = (exVolume[e.name] || 0) + vol;
+            const w_lbs = Number(e.weight_lbs) || 0;
+            const reps = Number(e.reps) || 1;
+            const orm = w_lbs > 0 ? Math.round(w_lbs * (1 + reps / 30)) : 0;
+            if (!exStats[e.name]) exStats[e.name] = { volume: 0, pr: 0, orm: 0 };
+            exStats[e.name].volume += vol;
+            if (w_lbs > exStats[e.name].pr) { exStats[e.name].pr = w_lbs; exStats[e.name].orm = orm; }
           }));
-          const topEx = Object.entries(exVolume).sort((a, b) => b[1] - a[1]).slice(0, 5);
+          const topEx = Object.entries(exStats).sort((a, b) => b[1].volume - a[1].volume).slice(0, 5);
+
+          // PRs with 1RM for top exercises
+          const prs = Object.entries(exStats)
+            .filter(([, s]) => s.pr > 0)
+            .sort((a, b) => b[1].orm - a[1].orm)
+            .slice(0, 5);
 
           if (workoutsLoading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
           if (totalWorkouts === 0) return (
@@ -363,28 +378,33 @@ export default function Workouts() {
           return (
             <div className="space-y-4">
               {/* Stat cards */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Workouts", value: totalWorkouts, icon: Dumbbell, color: "text-primary" },
-                  { label: "Streak", value: `${streak}d`, icon: Flame, color: "text-orange-400" },
-                  { label: "Hours", value: Math.round(totalDuration / 60), icon: Trophy, color: "text-yellow-400" },
+                  { label: "Total Workouts", value: totalWorkouts, icon: Dumbbell, color: "text-primary" },
+                  { label: "Current Streak", value: `${streak} days`, icon: Flame, color: "text-orange-400" },
+                  { label: "Hours Trained", value: `${Math.round(totalDuration / 60)}h`, icon: Trophy, color: "text-yellow-400" },
+                  { label: "Avg / Week", value: avgPerWeek + "x", icon: TrendingUp, color: "text-cyan-400" },
                 ].map(({ label, value, icon: Icon, color }) => (
-                  <div key={label} className="bg-card rounded-2xl border border-border p-3 text-center">
-                    <Icon className={`h-5 w-5 mx-auto mb-1 ${color}`} />
-                    <p className="font-heading font-bold text-lg">{value}</p>
-                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                  <div key={label} className="bg-card rounded-2xl border border-border p-3 flex items-center gap-3">
+                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center bg-secondary flex-shrink-0`}>
+                      <Icon className={`h-4.5 w-4.5 ${color}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-heading font-bold text-base leading-tight">{value}</p>
+                      <p className="text-[11px] text-muted-foreground">{label}</p>
+                    </div>
                   </div>
                 ))}
               </div>
 
               {/* Weekly frequency chart */}
               <div className="bg-card rounded-2xl border border-border p-4">
-                <p className="font-heading font-semibold text-sm mb-3">Weekly Workouts</p>
+                <p className="font-heading font-semibold text-sm mb-3">Workouts per Week</p>
                 <ResponsiveContainer width="100%" height={120}>
-                  <BarChart data={weeks} barSize={20}>
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+                  <BarChart data={weeks} barSize={18}>
+                    <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
                     <YAxis hide allowDecimals={false} />
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} cursor={false} />
+                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} cursor={false} formatter={(v) => [v, "workouts"]} />
                     <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                       {weeks.map((entry, i) => <Cell key={i} fill={entry.count > 0 ? "hsl(var(--primary))" : "hsl(var(--secondary))"} />)}
                     </Bar>
@@ -392,32 +412,57 @@ export default function Workouts() {
                 </ResponsiveContainer>
               </div>
 
-              {/* Total volume */}
+              {/* Personal Records */}
+              {prs.length > 0 && (
+                <div className="bg-card rounded-2xl border border-border p-4">
+                  <p className="font-heading font-semibold text-sm mb-3">Personal Records</p>
+                  <div className="space-y-2">
+                    {prs.map(([name, s]) => (
+                      <div key={name} className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium truncate flex-1">{name}</p>
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">Best set</p>
+                            <p className="text-sm font-heading font-bold text-primary">{s.pr} lbs</p>
+                          </div>
+                          {s.orm > s.pr && (
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Est. 1RM</p>
+                              <p className="text-sm font-heading font-bold text-cyan-400">{s.orm} lbs</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Total volume + top exercises */}
               {totalVolume > 0 && (
                 <div className="bg-card rounded-2xl border border-border p-4 flex items-center justify-between">
                   <div>
                     <p className="font-heading font-semibold text-sm">Total Volume Lifted</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">All time</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">All time · sets × reps × weight</p>
                   </div>
                   <p className="font-heading font-bold text-xl text-primary">{(totalVolume / 1000).toFixed(1)}k lbs</p>
                 </div>
               )}
 
-              {/* Top exercises */}
               {topEx.length > 0 && (
                 <div className="bg-card rounded-2xl border border-border p-4">
-                  <p className="font-heading font-semibold text-sm mb-3">Top Exercises by Volume</p>
+                  <p className="font-heading font-semibold text-sm mb-3">Most Trained Exercises</p>
                   <div className="space-y-2">
-                    {topEx.map(([name, vol], i) => (
+                    {topEx.map(([name, s], i) => (
                       <div key={name} className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground w-4">{i + 1}</span>
+                        <span className="text-xs text-muted-foreground w-4 flex-shrink-0">{i + 1}</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{name}</p>
                           <div className="mt-1 h-1.5 rounded-full bg-secondary overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: `${(vol / topEx[0][1]) * 100}%` }} />
+                            <div className="h-full bg-primary rounded-full" style={{ width: `${(s.volume / topEx[0][1].volume) * 100}%` }} />
                           </div>
                         </div>
-                        <span className="text-xs text-muted-foreground flex-shrink-0">{(vol / 1000).toFixed(1)}k</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0">{s.volume >= 1000 ? (s.volume/1000).toFixed(1)+"k" : s.volume} lbs</span>
                       </div>
                     ))}
                   </div>

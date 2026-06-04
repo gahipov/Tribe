@@ -133,7 +133,7 @@ export default function Nutrition() {
           todayMeals={todayMeals}
         />
       )}
-      {tab === "history" && <div className="p-4">{meals.length===0 ? <div className="text-center py-20"><TrendingUp className="h-10 w-10 text-primary/50 mx-auto mb-3"/><p className="text-sm text-muted-foreground">Log meals to see your trends</p></div> : <NutritionHistory meals={meals}/>}</div>}
+      {tab === "history" && <div className="p-4">{meals.length===0 ? <div className="text-center py-20"><TrendingUp className="h-10 w-10 text-primary/50 mx-auto mb-3"/><p className="text-sm text-muted-foreground">Log meals to see your trends</p></div> : <NutritionHistory meals={meals} goals={{ calories: calGoal, protein: pGoal, carbs: cGoal, fat: fGoal }}/>}</div>}
       <FoodLookupDialog open={lookupOpen} onClose={() => setLookupOpen(false)} onSelect={food => { setPrefill(food); setEditMeal(null); setFormOpen(true); }}/>
       <MealFormDialog open={formOpen} onOpenChange={v => { setFormOpen(v); if(!v) setPrefill(null); }} editMeal={editMeal} prefill={prefill}/>
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

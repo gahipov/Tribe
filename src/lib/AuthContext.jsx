@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
-import { getIsPremium } from '@/lib/revenueCat';
+import { getIsPremium, initRevenueCat } from '@/lib/revenueCat';
 
 const AuthContext = createContext();
 
@@ -48,6 +48,7 @@ export const AuthProvider = ({ children }) => {
   const fetchProfile = async (userId) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfile(data);
+    await initRevenueCat(userId);
     const premium = await getIsPremium();
     setIsPremium(premium);
   };

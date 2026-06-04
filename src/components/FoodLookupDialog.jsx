@@ -9,6 +9,7 @@ import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useUpgradeModal } from "@/components/PremiumGate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { isNative } from "@/lib/revenueCat";
 
 const USDA_KEY = import.meta.env.VITE_USDA_API_KEY || "DEMO_KEY";
 
@@ -130,10 +131,52 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const [aiHint, setAiHint] = useState("");
   const [aiPhoto, setAiPhoto] = useState(null); // { file, previewUrl, base64, mediaType }
   const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(false);
   const fileRef = useRef(null);
   const aiFileRef = useRef(null);
 
-  const reset = () => { setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
+  const startScan = async () => {
+    if (!isNative()) {
+      fileRef.current?.click();
+      return;
+    }
+    setError("");
+    setScanning(true);
+    try {
+      const { BarcodeScanner, BarcodeFormat } = await import("@capacitor-mlkit/barcode-scanning");
+      const { camera } = await BarcodeScanner.requestPermissions();
+      if (camera !== "granted" && camera !== "limited") {
+        setScanning(false);
+        setError("Camera permission denied. Enter barcode manually.");
+        return;
+      }
+      const { barcodes } = await BarcodeScanner.scan({
+        formats: [
+          BarcodeFormat.Ean13, BarcodeFormat.Ean8,
+          BarcodeFormat.UpcA, BarcodeFormat.UpcE,
+          BarcodeFormat.Code128, BarcodeFormat.Code39,
+          BarcodeFormat.QrCode,
+        ],
+      });
+      setScanning(false);
+      if (barcodes.length > 0) {
+        const code = barcodes[0].rawValue;
+        setBarcode(code);
+        setLoading(true);
+        try {
+          const res = await lookupBarcode(code);
+          if (res) setSelected(res);
+          else setError("not_found");
+        } catch { setError("Lookup failed."); }
+        setLoading(false);
+      }
+    } catch {
+      setScanning(false);
+      setError("Scan failed. Enter barcode manually.");
+    }
+  };
+
+  const reset = () => { setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleAIPhotoSelect = async (e) => {
@@ -216,30 +259,40 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const handleBarcodeFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
     setLoading(true); setError("");
     try {
-      const { BrowserMultiFormatReader } = await import("@zxing/library");
-      const reader = new BrowserMultiFormatReader();
+      const { BrowserMultiFormatReader, DecodeHintType } = await import("@zxing/library");
+      const hints = new Map();
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints);
       const imgUrl = URL.createObjectURL(file);
       const img = new Image();
       img.src = imgUrl;
       await new Promise(r => { img.onload = r; img.onerror = r; });
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-      canvas.getContext("2d").drawImage(img, 0, 0);
       URL.revokeObjectURL(imgUrl);
-      let code;
-      try { code = reader.decodeFromCanvas(canvas).getText(); } catch { code = null; }
+      // Try multiple scales — ZXing works best ~800-1500px wide, large photos fail
+      const scales = [1280, 800, 1920, 640];
+      let code = null;
+      for (const maxW of scales) {
+        const scale = Math.min(1, maxW / img.naturalWidth);
+        const w = Math.round(img.naturalWidth * scale);
+        const h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        try { code = reader.decodeFromCanvas(canvas).getText(); break; } catch { /* try next */ }
+      }
       if (code) {
         setBarcode(code);
         const res = await lookupBarcode(code);
         if (res) { setSelected(res); setLoading(false); return; }
         else setError("not_found");
       } else {
-        setError("No barcode detected. Enter the number manually below.");
+        setError("No barcode detected. Try a clearer photo or enter the number manually.");
       }
     } catch {
-      setError("Could not read barcode. Enter the number manually.");
+      setError("Could not read barcode. Enter manually.");
     }
     setLoading(false);
   };
@@ -286,7 +339,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         {/* AI */}
         {method === "ai" && !selected && (
           <div className="space-y-3 pt-2">
-            <input ref={aiFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAIPhotoSelect} />
+            <input ref={aiFileRef} type="file" accept="image/*" className="hidden" onChange={handleAIPhotoSelect} />
             {loading ? (
               <div className="flex flex-col items-center gap-3 py-10">
                 <Sparkles className="h-10 w-10 text-primary animate-pulse" />
@@ -392,10 +445,10 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         {/* Barcode */}
         {method === "barcode" && !selected && (
           <div className="space-y-3 pt-2">
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleBarcodeFile} />
-            <Button onClick={() => fileRef.current?.click()} className="w-full" variant="outline" disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Barcode className="h-4 w-4 mr-2" />}
-              Scan Barcode with Camera
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleBarcodeFile} />
+            <Button onClick={startScan} className="w-full" variant="outline" disabled={loading || scanning}>
+              {scanning || loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Camera className="h-4 w-4 mr-2" />}
+              {scanning ? "Opening scanner…" : "Scan Barcode"}
             </Button>
             <div className="flex items-center gap-2">
               <div className="h-px flex-1 bg-border" />

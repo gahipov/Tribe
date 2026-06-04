@@ -6,8 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Onboarding from '@/components/Onboarding';
-import { useEffect } from 'react';
-import { initRevenueCat } from '@/lib/revenueCat';
+import { useEffect, Component } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -20,14 +19,31 @@ import Nutrition from './pages/Nutrition';
 import Discover from './pages/Discover';
 import Profile from './pages/Profile';
 
-const AuthenticatedApp = () => {
-  const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone, user } = useAuth();
-
-  useEffect(() => {
-    if (user?.id) {
-      initRevenueCat(user.id);
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error, info) { console.error('App error:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 flex flex-col items-center justify-center p-8 bg-background text-center gap-4">
+          <p className="font-heading font-bold text-lg">Something went wrong</p>
+          <p className="text-sm text-muted-foreground">The app hit an unexpected error.</p>
+          <button
+            onClick={() => { this.setState({ hasError: false }); window.location.reload(); }}
+            className="px-6 py-2.5 rounded-2xl bg-primary text-primary-foreground font-heading font-semibold text-sm"
+          >
+            Reload
+          </button>
+        </div>
+      );
     }
-  }, [user?.id]);
+    return this.props.children;
+  }
+}
+
+const AuthenticatedApp = () => {
+  const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone } = useAuth();
 
   if (isLoadingAuth || !authChecked) {
     return (
@@ -81,14 +97,18 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <ErrorBoundary>
+              <AuthenticatedApp />
+            </ErrorBoundary>
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

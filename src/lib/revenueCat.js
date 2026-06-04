@@ -2,6 +2,7 @@ import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 
 const API_KEY_IOS = import.meta.env.VITE_REVENUECAT_IOS_KEY;
 const ENTITLEMENT_ID = 'pro';
+let _rcConfigured = false;
 
 export async function initRevenueCat(userId) {
   if (!API_KEY_IOS) {
@@ -11,12 +12,14 @@ export async function initRevenueCat(userId) {
   try {
     await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
     await Purchases.configure({ apiKey: API_KEY_IOS, appUserID: userId });
+    _rcConfigured = true;
   } catch (e) {
     console.error('RevenueCat init failed:', e);
   }
 }
 
 export async function getIsPremium() {
+  if (!_rcConfigured) return false;
   try {
     const { customerInfo } = await Purchases.getCustomerInfo();
     return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
@@ -31,15 +34,17 @@ export function isNative() {
 
 export async function presentPaywall() {
   if (!isNative()) {
-    // On web/localhost the native paywall can't run — signal caller to show fallback UI
     return { paywallResult: 'WEB_FALLBACK' };
   }
-  const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
+  if (!_rcConfigured) {
+    console.warn('RevenueCat: not configured yet');
+    return { paywallResult: 'ERROR' };
+  }
   try {
-    const result = await RevenueCatUI.presentPaywallIfNeeded({
-      requiredEntitlementIdentifier: ENTITLEMENT_ID,
-    });
-    return result;
+    const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
+    // Use presentPaywall (not IfNeeded) — simpler, fewer native failure modes
+    const result = await RevenueCatUI.presentPaywall();
+    return result ?? { paywallResult: 'CANCELLED' };
   } catch (e) {
     console.error('Paywall failed:', e);
     return { paywallResult: 'ERROR' };

@@ -226,7 +226,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
     const totalSets = Object.values(logs).reduce((acc, l) => acc + (l?.filter(s => s.done).length || 0), 0);
     const completedExercises = exercises.filter((_, i) => allSetsDone(i)).length;
     return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 z-50">
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 z-50" style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
         <div className="text-center space-y-4 max-w-sm w-full">
           <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
             <Trophy className="h-12 w-12 text-primary" />
@@ -261,7 +261,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
       onTouchEnd={handleTouchEnd}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-safe pt-4 pb-3 border-b border-border flex-shrink-0">
+      <div className="flex items-center justify-between px-4 pb-3 border-b border-border flex-shrink-0" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
         <button onClick={onCancel} className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
           <X className="h-5 w-5" />
         </button>
@@ -429,7 +429,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
       </div>
 
       {/* Bottom navigation */}
-      <div className="flex-shrink-0 px-4 pb-safe pb-6 pt-3 border-t border-border bg-background/95 backdrop-blur-xl">
+      <div className="flex-shrink-0 px-4 pt-3 border-t border-border bg-background/95 backdrop-blur-xl" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
         <div className="flex gap-3">
           <Button variant="outline" onClick={goPrev} disabled={exIdx === 0}
             className="flex-1 rounded-2xl font-heading h-12">
