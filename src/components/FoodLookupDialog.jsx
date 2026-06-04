@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useUpgradeModal } from "@/components/PremiumGate";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isNative } from "@/lib/revenueCat";
+import { toast } from "sonner";
 
 const USDA_KEY = import.meta.env.VITE_USDA_API_KEY || "DEMO_KEY";
 
@@ -144,12 +145,35 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
     setScanning(true);
     try {
       const { BarcodeScanner, BarcodeFormat } = await import("@capacitor-mlkit/barcode-scanning");
+      const { Capacitor } = await import("@capacitor/core");
+      const platform = Capacitor.getPlatform();
+
+      // Android: ensure Google Barcode Scanner Module is installed
+      if (platform === "android") {
+        const { available } = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+        if (!available) {
+          toast.info("Preparing scanner for first use…");
+          await BarcodeScanner.installGoogleBarcodeScannerModule();
+          await new Promise((resolve) => {
+            BarcodeScanner.addListener("googleBarcodeScannerModuleInstallProgress", (event) => {
+              if (event.state === "COMPLETED") resolve();
+            });
+          });
+        }
+      }
+
+      // iOS: pre-warm camera to prevent silent scan failure
+      if (platform === "ios") {
+        await BarcodeScanner.prepare?.();
+      }
+
       const { camera } = await BarcodeScanner.requestPermissions();
       if (camera !== "granted" && camera !== "limited") {
         setScanning(false);
         setError("Camera permission denied. Enter barcode manually.");
         return;
       }
+
       const { barcodes } = await BarcodeScanner.scan({
         formats: [
           BarcodeFormat.Ean13, BarcodeFormat.Ean8,
@@ -158,6 +182,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
           BarcodeFormat.QrCode,
         ],
       });
+
       setScanning(false);
       if (barcodes.length > 0) {
         const code = barcodes[0].rawValue;
