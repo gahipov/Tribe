@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner"
+import { UploadProvider } from "@/lib/uploadContext"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
@@ -102,10 +103,12 @@ function App() {
         <QueryClientProvider client={queryClientInstance}>
           <Router>
             <ErrorBoundary>
-              <AuthenticatedApp />
+              <UploadProvider>
+                <AuthenticatedApp />
+                <Toaster position="top-center" richColors />
+              </UploadProvider>
             </ErrorBoundary>
           </Router>
-          <Toaster />
         </QueryClientProvider>
       </AuthProvider>
     </ErrorBoundary>
