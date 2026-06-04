@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import ReactDOM from "react-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,6 +136,14 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const [scanning, setScanning] = useState(false);
   const fileRef = useRef(null);
   const aiFileRef = useRef(null);
+  const scanStopRef = useRef(null); // stores () => Promise<void> to cancel active scan
+
+  const stopActiveScan = async () => {
+    if (scanStopRef.current) {
+      await scanStopRef.current();
+      scanStopRef.current = null;
+    }
+  };
 
   const startScan = async () => {
     if (!isNative()) {
@@ -165,11 +174,6 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         }
       }
 
-      // iOS: pre-warm camera to prevent silent scan failure
-      if (platform === "ios") {
-        await BarcodeScanner.prepare?.();
-      }
-
       const { camera } = await BarcodeScanner.requestPermissions();
       if (camera !== "granted" && camera !== "limited") {
         setScanning(false);
@@ -177,18 +181,32 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         return;
       }
 
-      const { barcodes } = await BarcodeScanner.scan({
-        formats: [
-          BarcodeFormat.Ean13, BarcodeFormat.Ean8,
-          BarcodeFormat.UpcA, BarcodeFormat.UpcE,
-          BarcodeFormat.Code128, BarcodeFormat.Code39,
-          BarcodeFormat.QrCode,
-        ],
-      });
+      // Make WebView transparent so camera feed shows through
+      document.body.style.background = "transparent";
+      document.body.style.backgroundColor = "transparent";
 
-      setScanning(false);
-      if (barcodes.length > 0) {
-        const code = barcodes[0].rawValue;
+      const formats = [
+        BarcodeFormat.Ean13, BarcodeFormat.Ean8,
+        BarcodeFormat.UpcA, BarcodeFormat.UpcE,
+        BarcodeFormat.Code128, BarcodeFormat.Code39,
+        BarcodeFormat.QrCode,
+      ];
+
+      const cleanup = async () => {
+        document.body.style.background = "";
+        document.body.style.backgroundColor = "";
+        await BarcodeScanner.stopScan();
+        setScanning(false);
+      };
+
+      scanStopRef.current = cleanup;
+      await BarcodeScanner.startScan({ formats });
+
+      const listener = await BarcodeScanner.addListener("barcodeScanned", async ({ barcode }) => {
+        await listener.remove();
+        scanStopRef.current = null;
+        await cleanup();
+        const code = barcode.rawValue;
         setBarcode(code);
         setLoading(true);
         try {
@@ -197,14 +215,23 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
           else setError("not_found");
         } catch { setError("Lookup failed."); }
         setLoading(false);
-      }
+      });
+
+      // Update cleanup to also remove listener
+      scanStopRef.current = async () => {
+        await listener.remove();
+        await cleanup();
+      };
+
     } catch {
+      document.body.style.background = "";
+      document.body.style.backgroundColor = "";
       setScanning(false);
       setError("Scan failed. Enter barcode manually.");
     }
   };
 
-  const reset = () => { setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
+  const reset = () => { stopActiveScan(); setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleAIPhotoSelect = async (e) => {
@@ -327,7 +354,22 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
 
   const editField = (key, val) => setSelected(s => ({ ...s, [key]: parseFloat(val) || 0 }));
 
+  // Cancel button rendered over transparent WebView during camera scan
+  const scanOverlay = scanning && isNative() && ReactDOM.createPortal(
+    <div className="fixed inset-0 flex flex-col items-center justify-end pb-16 z-[9999] pointer-events-none">
+      <button
+        className="pointer-events-auto bg-black/70 text-white font-semibold px-8 py-3 rounded-full text-sm"
+        onClick={stopActiveScan}
+      >
+        Cancel
+      </button>
+    </div>,
+    document.body
+  );
+
   return (
+    <>
+      {scanOverlay}
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="bg-card border-border max-w-md max-h-[90dvh] overflow-y-auto">
         <UpgradeModal />
@@ -589,5 +631,6 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 }
