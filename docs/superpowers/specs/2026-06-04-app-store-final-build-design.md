@@ -10,34 +10,45 @@
 Direct `supabase.storage.upload()` has no retry, no progress, and silently fails on large files or slow connections. Supabase default file size limit is 50MB.
 
 ### Solution
-Use `tus-js-client` for resumable uploads over TUS protocol. Works identically on iOS and Android (pure JS/HTTP — no native plugin required). Small files stay on the fast direct path.
+Two-phase pipeline: **compress → upload**.
 
-### Architecture
+- **Compress** with `@ffmpeg/ffmpeg` + `@ffmpeg/util` (ffmpeg.wasm). Runs in-browser WebWorker, works on iOS WKWebView and Android Chromium. Re-encodes to H.264 720p at ~1Mbps to keep output well under 50MB.
+- **Upload** with `tus-js-client` over TUS protocol to Supabase resumable upload endpoint. Handles retries and progress natively.
 
-**Threshold:** Files ≤ 2MB use direct Supabase upload. Files > 2MB use TUS.
+### Duration limit
+Reject videos longer than 60 seconds before compression starts. Read duration via `<video>` element `loadedmetadata` event. Show toast: `"Videos must be 60 seconds or less."`.
 
-**Size gate:** Reject files > 100MB client-side before any upload attempt, with a toast: `"Video is too large (max 100MB). Trim it and try again."`
+### Compression
+- Load ffmpeg.wasm lazily (dynamic import) on first video — avoids ~30MB bundle cost until needed
+- Target output: `libx264`, 720p, CRF 28, `aac` audio at 128k
+- Show inline progress inside `CreatePostDialog`: `"Compressing… 42%"` driven by ffmpeg `onProgress`
+- After compression completes: close the dialog and hand off to background upload
 
-**TUS endpoint:** `{SUPABASE_URL}/storage/v1/upload/resumable`
+### Background upload UX (Instagram-style)
+Once compression finishes and upload starts:
+1. Close `CreatePostDialog`
+2. Show a persistent bottom banner (above the nav bar) with: uploading spinner + `"Posting to your tribe…"` + progress percentage
+3. User can freely navigate to other tabs — banner persists via a global `UploadContext` (`React.createContext`) that holds upload state
+4. On success: banner becomes `"Posted! ✓"` for 3 seconds then disappears, feed query invalidated
+5. On error: banner becomes `"Upload failed. Tap to retry."` — tap re-triggers TUS resume
 
-**Chunk size:** 6MB (Supabase requirement — do not change).
-
-**Auth:** Pass `Authorization: Bearer {session.access_token}` header.
-
-**Metadata:** `bucketName`, `objectName`, `contentType`, `cacheControl: '3600'`.
-
-**Progress:** `onProgress(bytesUploaded, bytesTotal)` → drives a `<progress>` bar shown inline in `CreatePostDialog` while uploading. Hide on success/error.
-
-**Resume:** Call `upload.findPreviousUploads()` on start; if found, call `upload.resumeFromPreviousUpload(previous[0])` before starting.
-
-**Error:** On `onError`, show toast `"Upload failed — tap Post to retry"`. Store the `tus.Upload` instance in a ref so retry re-uses the same resumable session.
+### TUS upload details
+**Endpoint:** `{SUPABASE_URL}/storage/v1/upload/resumable`  
+**Chunk size:** 6MB  
+**Auth:** `Authorization: Bearer {session.access_token}`  
+**Metadata:** `bucketName`, `objectName`, `contentType`, `cacheControl: '3600'`  
+**Resume:** `findPreviousUploads()` → `resumeFromPreviousUpload()` on retry
 
 ### Files changed
-- `src/components/CreatePostDialog.jsx` — replace upload logic with `uploadMedia()` helper
-- `src/lib/tusUpload.js` — new file encapsulating TUS upload logic
+- `src/components/CreatePostDialog.jsx` — add duration check, compression phase, hand off to context
+- `src/lib/uploadContext.jsx` — new: global `UploadContext` + `UploadProvider` + `useUpload` hook
+- `src/lib/tusUpload.js` — new: TUS upload logic
+- `src/components/UploadBanner.jsx` — new: persistent bottom banner
+- `src/components/Layout.jsx` — render `<UploadBanner />` above nav
 
 ### Dependencies
-- `tus-js-client` (install via npm)
+- `tus-js-client`
+- `@ffmpeg/ffmpeg` + `@ffmpeg/util`
 
 ---
 
@@ -110,6 +121,6 @@ A 5-stop spotlight tooltip tour triggered once after onboarding completes. Built
 
 ## Data / Storage Notes
 
-- **Supabase bucket `media`**: Update max file size policy to 100MB in Supabase dashboard (Storage → Policies). No code change needed.
+- **Supabase bucket `media`**: Free tier hard limit is 50MB per file. No policy change needed — client-side gate matches this limit.
 - **Tour state**: `localStorage` only — no DB column needed. Fast, no network round-trip, survives app restarts.
 - **Barcode module install**: One-time, persists in native app — no tracking needed.
