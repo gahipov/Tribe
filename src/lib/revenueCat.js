@@ -1,12 +1,12 @@
 import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 
-const API_KEY_IOS = import.meta.env.VITE_REVENUECAT_IOS_KEY;
+const API_KEY_IOS = import.meta.env.VITE_REVENUECAT_IOS_KEY || 'appl_cIMcvGlvbIfUImUWUmXCCSurSCf';
 const ENTITLEMENT_ID = 'pro';
 let _rcConfigured = false;
 
 export async function initRevenueCat(userId) {
   if (!API_KEY_IOS) {
-    console.warn('RevenueCat: VITE_REVENUECAT_IOS_KEY not set');
+    console.warn('RevenueCat: no API key');
     return;
   }
   try {
