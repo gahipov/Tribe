@@ -157,43 +157,107 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
     setScanning(false);
   };
 
+  // Decode barcode from image element using ZXing (multi-scale for reliability)
+  const decodeImageWithZXing = async (imgEl) => {
+    const { BrowserMultiFormatReader, DecodeHintType } = await import("@zxing/library");
+    const hints = new Map();
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    const reader = new BrowserMultiFormatReader(hints);
+    const scales = [1280, 800, 1920, 640, 400];
+    for (const maxW of scales) {
+      const scale = Math.min(1, maxW / imgEl.naturalWidth);
+      const w = Math.round(imgEl.naturalWidth * scale);
+      const h = Math.round(imgEl.naturalHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(imgEl, 0, 0, w, h);
+      try { return reader.decodeFromCanvas(canvas).getText(); } catch { /* try next scale */ }
+    }
+    return null;
+  };
+
   const startScan = async () => {
-    if (!isNative()) {
-      // Web: use getUserMedia + ZXing live decode
-      setError("");
-      setScanning(true);
+    setError("");
+    setScanning(true);
+
+    if (isNative()) {
+      // ── Native: use @capacitor/camera to take photo, decode with ZXing ──
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+
+        // Request permission
+        const perms = await Camera.requestPermissions({ permissions: ["camera"] });
+        if (perms.camera !== "granted" && perms.camera !== "limited") {
+          setScanning(false);
+          setError(`Camera permission denied. Go to Settings → Tribe → Camera → Allow.`);
+          return;
+        }
+
+        // Open native camera
+        const photo = await Camera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: CameraSource.Camera,
+          correctOrientation: true,
+        });
+
+        setScanning(false);
+
+        if (!photo?.dataUrl) { setError("No photo captured."); return; }
+
+        setLoading(true);
+        // Load image and decode barcode
+        const img = new Image();
+        img.src = photo.dataUrl;
+        await new Promise(r => { img.onload = r; img.onerror = r; });
+
+        const code = await decodeImageWithZXing(img);
+        if (code) {
+          toast.info(`Barcode: ${code}`);
+          setBarcode(code);
+          const res = await lookupBarcode(code);
+          if (res) setSelected(res);
+          else setError("not_found");
+        } else {
+          setError("No barcode detected. Try holding the camera steady and closer to the barcode, or enter manually.");
+        }
+      } catch (e) {
+        setScanning(false);
+        if (e?.message?.includes("cancelled") || e?.message?.includes("cancel")) return; // user cancelled
+        setError(`Camera error: ${e?.message}`);
+      } finally {
+        setLoading(false);
+      }
+
+    } else {
+      // ── Web: getUserMedia live stream + RAF decode loop ──
       try {
         const { BrowserMultiFormatReader, DecodeHintType } = await import("@zxing/library");
         const hints = new Map();
         hints.set(DecodeHintType.TRY_HARDER, true);
-        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 200 });
+        const reader = new BrowserMultiFormatReader(hints);
         webScanReaderRef.current = reader;
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
         });
 
-        // Wait for video element to be in DOM
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, 150));
         if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
 
-        scanStopRef.current = stopWebScan;
-
-        // Try to zoom in 1.5x via camera constraints
+        // Try 1.5x zoom
         try {
           const track = stream.getVideoTracks()[0];
           const caps = track.getCapabilities?.();
           if (caps?.zoom) await track.applyConstraints({ advanced: [{ zoom: Math.min(1.5, caps.zoom.max) }] });
-        } catch { /* zoom not supported — fine */ }
+        } catch { /* zoom not supported */ }
 
-        // Manual RAF loop — more reliable than decodeFromStream
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         let active = true;
-
-        const origStop = scanStopRef.current;
         scanStopRef.current = () => { active = false; stopWebScan(); };
 
         const tick = () => {
@@ -210,169 +274,31 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
             if (result) {
               const code = result.getText();
               active = false;
-              toast.info(`[Scan] Barcode: ${code}`);
               stopWebScan();
               scanStopRef.current = null;
               setBarcode(code);
               setLoading(true);
-              lookupBarcode(code).then(res => {
-                if (res) setSelected(res);
-                else setError("not_found");
-              }).catch(e => setError(`Lookup failed: ${e?.message}`))
+              lookupBarcode(code)
+                .then(res => { if (res) setSelected(res); else setError("not_found"); })
+                .catch(e => setError(`Lookup failed: ${e?.message}`))
                 .finally(() => setLoading(false));
               return;
             }
-          } catch { /* NotFoundException — no barcode in frame yet */ }
+          } catch { /* no barcode yet */ }
           requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
+
       } catch (e) {
         setScanning(false);
         if (e?.name === "NotAllowedError") setError("Camera permission denied. Allow camera in browser settings.");
         else if (e?.name === "NotFoundError") setError("No camera found on this device.");
         else setError(`Camera error: ${e?.message}`);
       }
-      return;
-    }
-
-    setError("");
-    setScanning(true);
-
-    // ── Step 1: import plugin ──────────────────────────────────────────
-    let BarcodeScanner, BarcodeFormat, platform;
-    try {
-      const mlkit = await import("@capacitor-mlkit/barcode-scanning");
-      BarcodeScanner = mlkit.BarcodeScanner;
-      BarcodeFormat = mlkit.BarcodeFormat;
-      const { Capacitor } = await import("@capacitor/core");
-      platform = Capacitor.getPlatform();
-      toast.info(`[Scan] Plugin loaded — platform: ${platform}`);
-    } catch (e) {
-      setScanning(false);
-      setError(`[Step 1] Plugin import failed: ${e?.message}`);
-      return;
-    }
-
-    // ── Step 2: Android — ensure Google Barcode Scanner Module ─────────
-    if (platform === "android") {
-      try {
-        const { available } = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
-        toast.info(`[Scan] Google module available: ${available}`);
-        if (!available) {
-          toast.info("[Scan] Installing Google Barcode Module…");
-          await BarcodeScanner.installGoogleBarcodeScannerModule();
-          await new Promise((resolve, reject) => {
-            let handle;
-            const timeout = setTimeout(() => {
-              handle?.remove();
-              reject(new Error("Module install timed out after 30s"));
-            }, 30000);
-            BarcodeScanner.addListener("googleBarcodeScannerModuleInstallProgress", (event) => {
-              toast.info(`[Scan] Module install: ${event.state}`);
-              if (event.state === "COMPLETED") { clearTimeout(timeout); handle?.remove(); resolve(); }
-              if (event.state === "FAILED" || event.state === "CANCELED") { clearTimeout(timeout); handle?.remove(); reject(new Error(`Module install ${event.state}`)); }
-            }).then(h => { handle = h; });
-          });
-          toast.success("[Scan] Google module installed");
-        }
-      } catch (e) {
-        setScanning(false);
-        setError(`[Step 2] Google module error: ${e?.message}`);
-        return;
-      }
-    }
-
-    // ── Step 3: camera permission ──────────────────────────────────────
-    let permResult;
-    try {
-      permResult = await BarcodeScanner.requestPermissions();
-      toast.info(`[Scan] Camera permission: ${permResult.camera}`);
-    } catch (e) {
-      setScanning(false);
-      setError(`[Step 3] Permission request failed: ${e?.message}`);
-      return;
-    }
-
-    if (permResult.camera !== "granted" && permResult.camera !== "limited") {
-      setScanning(false);
-      setError(`Camera permission denied (${permResult.camera}). Go to Settings → Tribe → Camera → Allow.`);
-      return;
-    }
-
-    // ── Step 4: make WebView transparent ──────────────────────────────
-    document.documentElement.style.backgroundColor = "transparent";
-    document.documentElement.style.background = "transparent";
-    document.body.style.backgroundColor = "transparent";
-    document.body.style.background = "transparent";
-
-    const formats = [
-      BarcodeFormat.Ean13, BarcodeFormat.Ean8,
-      BarcodeFormat.UpcA, BarcodeFormat.UpcE,
-      BarcodeFormat.Code128, BarcodeFormat.Code39,
-      BarcodeFormat.QrCode,
-    ];
-
-    const cleanup = async () => {
-      document.documentElement.style.backgroundColor = "";
-      document.documentElement.style.background = "";
-      document.body.style.backgroundColor = "";
-      document.body.style.background = "";
-      try { await BarcodeScanner.stopScan(); } catch { /* already stopped */ }
-      setScanning(false);
-    };
-
-    // ── Step 5: register listener BEFORE startScan ────────────────────
-    let listener;
-    try {
-      listener = await BarcodeScanner.addListener("barcodeScanned", async (event) => {
-        try {
-          await listener.remove();
-          scanStopRef.current = null;
-          await cleanup();
-
-          const code = event?.barcode?.rawValue;
-          toast.info(`[Scan] Barcode detected: ${code}`);
-
-          if (!code) { setError("[Step 5] Scan returned empty barcode value."); return; }
-
-          setBarcode(code);
-          setLoading(true);
-          try {
-            const res = await lookupBarcode(code);
-            if (res) setSelected(res);
-            else setError("not_found");
-          } catch (e) {
-            setError(`Lookup failed: ${e?.message}`);
-          }
-          setLoading(false);
-        } catch (e) {
-          await cleanup();
-          setError(`[Step 5] Scan handler error: ${e?.message}`);
-        }
-      });
-      toast.info("[Scan] Listener registered");
-    } catch (e) {
-      await cleanup();
-      setError(`[Step 5] Failed to register listener: ${e?.message}`);
-      return;
-    }
-
-    // ── Step 6: start scan ─────────────────────────────────────────────
-    try {
-      await BarcodeScanner.startScan({ formats });
-      toast.info("[Scan] Camera started — point at barcode");
-      scanStopRef.current = async () => {
-        await listener.remove();
-        await cleanup();
-      };
-    } catch (e) {
-      await listener.remove();
-      await cleanup();
-      setError(`[Step 6] startScan failed: ${e?.message}`);
     }
   };
 
-  const reset = () => { stopActiveScan(); stopWebScan(); setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
+  const reset = () => { stopActiveScan(); stopWebScan(); scanStopRef.current = null; setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleAIPhotoSelect = async (e) => {
