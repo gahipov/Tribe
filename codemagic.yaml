@@ -68,3 +68,56 @@ workflows:
         auth: integration
         submit_to_testflight: true
         submit_to_app_store: false
+
+  android-release:
+    name: Tribe Android Release
+    max_build_duration: 60
+    instance_type: linux_x2
+
+    environment:
+      groups:
+        - env
+      android_signing:
+        - tribe_keystore
+      vars:
+        PACKAGE_NAME: com.tribe.gym
+        VITE_REVENUECAT_ANDROID_KEY: $VITE_REVENUECAT_ANDROID_KEY
+      node: 22.11.0
+
+    scripts:
+      - name: Install dependencies
+        script: npm install
+
+      - name: Set environment variables
+        script: |
+          echo "VITE_SUPABASE_URL=$VITE_SUPABASE_URL" >> .env
+          echo "VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY" >> .env
+          echo "VITE_USDA_API_KEY=$VITE_USDA_API_KEY" >> .env
+          echo "VITE_REVENUECAT_ANDROID_KEY=$VITE_REVENUECAT_ANDROID_KEY" >> .env
+
+      - name: Build web app
+        script: npm run build
+
+      - name: Sync Capacitor
+        script: npx cap sync android
+
+      - name: Set app version
+        script: |
+          cd android
+          VERSION_CODE=$BUILD_NUMBER
+          sed -i "s/versionCode .*/versionCode $VERSION_CODE/" app/build.gradle
+
+      - name: Build Android
+        script: |
+          cd android
+          ./gradlew bundleRelease
+
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+      - android/app/build/outputs/apk/release/*.apk
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
