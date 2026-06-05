@@ -59,7 +59,17 @@
       "Bash(git -C D:/gymapp commit -m \"fix: tour auth timing, barcode install timeout/leak, post insert after upload, ffmpeg singleton, timer race\")",
       "Bash(npm run *)",
       "Bash(git -C D:/gymapp add -A)",
-      "Bash(git -C D:/gymapp commit -m \"chore: sync native build after app store final build features\")"
+      "Bash(git -C D:/gymapp commit -m \"chore: sync native build after app store final build features\")",
+      "Bash(npm uninstall *)",
+      "Bash(git -C D:/gymapp add src/lib/uploadContext.jsx src/components/UploadBanner.jsx)",
+      "Bash(git -C D:/gymapp commit -m \"chore: remove compressing state from UploadContext and UploadBanner\")",
+      "Bash(git -C D:/gymapp add src/App.jsx)",
+      "Bash(git -C D:/gymapp commit -m \"chore: disable tour temporarily\")",
+      "Bash(where node *)",
+      "Bash(npm list *)",
+      "Bash(npm init *)",
+      "Bash(cd /mnt/c/Users/Gur/Downloads && npm init -y && npm install sharp)",
+      "PowerShell(dir \"D:\\\\Android studio\\\\\")"
     ]
   }
 }

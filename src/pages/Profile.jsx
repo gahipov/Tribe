@@ -41,9 +41,25 @@ export default function Profile() {
       const today = new Date().toISOString().split("T")[0];
       const { error } = await supabase.from('body_measurements').upsert({ user_id: user.id, date: today, weight_kg: kg }, { onConflict: 'user_id,date' });
       if (error) throw error;
+      return { date: today, weight_kg: kg };
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["body-measurements"] }); toast.success("Weight logged!"); setWeightInput(""); },
-    onError: () => toast.error("Failed to log weight"),
+    onMutate: async (kg) => {
+      await queryClient.cancelQueries({ queryKey: ["body-measurements"] });
+      const prev = queryClient.getQueryData(["body-measurements"]);
+      const today = new Date().toISOString().split("T")[0];
+      queryClient.setQueryData(["body-measurements"], (old = []) => {
+        const filtered = old.filter(m => m.date !== today);
+        return [{ user_id: user.id, date: today, weight_kg: kg }, ...filtered];
+      });
+      setWeightInput("");
+      toast.success("Weight logged!");
+      return { prev };
+    },
+    onError: (_err, _kg, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["body-measurements"], ctx.prev);
+      toast.error("Failed to log weight");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["body-measurements"] }),
   });
 
   const ADMINS = ["gahipov@gmail.com"];

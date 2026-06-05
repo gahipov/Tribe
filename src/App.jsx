@@ -46,8 +46,13 @@ class ErrorBoundary extends Component {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, authChecked, isAuthenticated, onboardingDone } = useAuth();
-  // Tour disabled — re-enable by restoring the useEffect below
   const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    if (onboardingDone && !localStorage.getItem("tribe_tour_done")) {
+      setShowTour(true);
+    }
+  }, [onboardingDone]);
 
   if (isLoadingAuth || !authChecked) {
     return (

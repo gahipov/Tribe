@@ -49,8 +49,8 @@ export const AuthProvider = ({ children }) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (data) setProfile(data);
     await initRevenueCat(userId);
-    const premium = await getIsPremium();
-    setIsPremium(premium);
+    const rcPremium = await getIsPremium();
+    setIsPremium(rcPremium || !!data?.is_premium);
   };
 
   const refreshProfile = async () => {
@@ -58,9 +58,20 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshPremium = async () => {
-    const premium = await getIsPremium();
-    setIsPremium(premium);
-    return premium;
+    // Check RevenueCat first, fall back to Supabase is_premium field
+    const rcPremium = await getIsPremium();
+    if (rcPremium) {
+      setIsPremium(true);
+      return true;
+    }
+    if (user?.id) {
+      const { data } = await supabase.from("profiles").select("is_premium").eq("id", user.id).single();
+      const premium = !!data?.is_premium;
+      setIsPremium(premium);
+      return premium;
+    }
+    setIsPremium(false);
+    return false;
   };
 
   const logout = async () => {

@@ -18,7 +18,7 @@ function getRect(target) {
   return el.getBoundingClientRect();
 }
 
-function buildClipPath(rect, padding = 8) {
+function buildClipPath(rect, padding = 10) {
   if (!rect) return "none";
   const { left, top, width, height } = rect;
   const x = left - padding;
@@ -36,8 +36,7 @@ export default function TourOverlay({ onDone }) {
   const stop = STOPS[step];
 
   const updateRect = useCallback(() => {
-    const r = getRect(stop.target);
-    setRect(r);
+    setRect(getRect(stop.target));
   }, [stop.target]);
 
   useEffect(() => {
@@ -56,35 +55,27 @@ export default function TourOverlay({ onDone }) {
     else finish();
   };
 
-  const tooltipStyle = (() => {
-    if (!rect) return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
-    const screenH = window.innerHeight;
-    const inBottomHalf = rect.top > screenH / 2;
-    const tooltipTop = inBottomHalf ? rect.top - 8 : rect.bottom + 8;
-    const transformY = inBottomHalf ? "-100%" : "0%";
-    const left = Math.max(12, Math.min(rect.left + rect.width / 2, window.innerWidth - 12));
-    return {
-      position: "fixed",
-      top: tooltipTop,
-      left,
-      transform: `translate(-50%, ${transformY})`,
-      width: "min(280px, calc(100vw - 24px))",
-      zIndex: 10000,
-    };
-  })();
-
   const overlay = (
     <div className="fixed inset-0 animate-in fade-in duration-300" style={{ zIndex: 9999 }}>
+      {/* Dark overlay with spotlight cutout */}
       <div
-        className="absolute inset-0 transition-[clip-path] duration-200"
+        className="absolute inset-0 transition-[clip-path] duration-300"
         style={{
           background: "rgba(0,0,0,0.78)",
           clipPath: buildClipPath(rect),
         }}
       />
+      {/* Tooltip always centered */}
       <div
         className="bg-card border border-border rounded-2xl shadow-2xl p-4 space-y-2"
-        style={tooltipStyle}
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(280px, calc(100vw - 24px))",
+          zIndex: 10000,
+        }}
       >
         <div className="flex items-start justify-between gap-2">
           <p className="font-heading font-bold text-sm text-foreground">{stop.title}</p>
