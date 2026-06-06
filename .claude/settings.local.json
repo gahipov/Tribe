@@ -69,7 +69,12 @@
       "Bash(npm list *)",
       "Bash(npm init *)",
       "Bash(cd /mnt/c/Users/Gur/Downloads && npm init -y && npm install sharp)",
-      "PowerShell(dir \"D:\\\\Android studio\\\\\")"
+      "PowerShell(dir \"D:\\\\Android studio\\\\\")",
+      "Bash(node -e \"const h = require\\('./node_modules/html5-qrcode/cjs/html5-qrcode.js'\\); console.log\\(Object.keys\\(h\\).filter\\(k => k.includes\\('Format'\\) || k.includes\\('Supported'\\)\\)\\)\")",
+      "Bash(node -e \"const h = require\\('./node_modules/html5-qrcode/cjs/core.js'\\); console.log\\(Object.keys\\(h\\)\\)\")",
+      "Bash(node -e \"const h = require\\('./node_modules/html5-qrcode'\\); console.log\\(Object.keys\\(h\\)\\)\")",
+      "Bash(node -e \"const {Html5QrcodeSupportedFormats} = require\\('./node_modules/html5-qrcode'\\); console.log\\(Html5QrcodeSupportedFormats\\)\")",
+      "Bash(node -e \"const h = require\\('./node_modules/html5-qrcode'\\); console.log\\(typeof h.Html5Qrcode, typeof h.Html5QrcodeSupportedFormats\\)\")"
     ]
   }
 }

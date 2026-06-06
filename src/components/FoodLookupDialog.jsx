@@ -39,34 +39,49 @@ function cleanName(desc) {
 // USDA FDC — SR Legacy + Foundation only (government whole-food data, accurate per 100g)
 async function searchUSDA(query) {
   const res = await fetch(
-    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=20&dataType=SR%20Legacy,Foundation&api_key=${USDA_KEY}`
+    `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=50&dataType=SR%20Legacy,Foundation,Branded&api_key=${USDA_KEY}`
   );
   if (!res.ok) throw new Error("USDA API error");
   const data = await res.json();
 
+  const q = query.toLowerCase().trim();
+  const qWords = q.split(/\s+/);
+
   const mapped = (data.foods || []).map(food => {
     const n = {};
     food.foodNutrients?.forEach(x => { n[x.nutrientId] = x.value; });
+    const cal = Math.round(n[1008] || n[2047] || 0);
+    if (!cal) return null;
+    const desc = food.description.toLowerCase();
+    // Score: exact match > starts with > all words present > partial
+    let score = 0;
+    if (desc === q) score = 100;
+    else if (desc.startsWith(q)) score = 80;
+    else if (qWords.every(w => desc.includes(w))) score = 60;
+    else if (qWords.some(w => desc.includes(w))) score = 20;
     return {
       name: cleanName(food.description),
       rawName: food.description,
       prep: getPrepTag(food.description),
+      brand: food.brandOwner || food.brandName || "",
       serving_size: "100g",
-      calories: Math.round(n[1008] || n[2047] || 0),
+      calories: cal,
       protein_g: +(n[1003] || 0).toFixed(1),
       carbs_g: +(n[1005] || 0).toFixed(1),
       fat_g: +(n[1004] || 0).toFixed(1),
+      _score: score,
     };
-  }).filter(f => f.calories > 0);
+  }).filter(Boolean);
 
-  // De-duplicate: keep best per calorie range bucket (avoid 20 near-identical entries)
+  // Sort by score desc, then deduplicate by calorie bucket
+  mapped.sort((a, b) => b._score - a._score);
   const seen = new Set();
   const deduped = [];
   for (const f of mapped) {
-    const bucket = Math.round(f.calories / 30); // group within 30 kcal
+    const bucket = Math.round(f.calories / 25);
     const key = f.name.split(",")[0].toLowerCase() + bucket;
     if (!seen.has(key)) { seen.add(key); deduped.push(f); }
-    if (deduped.length >= 6) break;
+    if (deduped.length >= 8) break;
   }
   return deduped;
 }
@@ -128,6 +143,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [servingG, setServingG] = useState(100);
   const [query, setQuery] = useState("");
   const [barcode, setBarcode] = useState("");
   const [aiHint, setAiHint] = useState("");
@@ -138,7 +154,8 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   const aiFileRef = useRef(null);
   const scanStopRef = useRef(null); // stores () => Promise<void> to cancel active scan
   const videoRef = useRef(null);
-  const webScanReaderRef = useRef(null); // ZXing reader for web camera scan
+  const webScanReaderRef = useRef(null);
+  const html5QrRef = useRef(null); // html5-qrcode instance for iOS + web
 
   const stopActiveScan = async () => {
     if (scanStopRef.current) {
@@ -148,8 +165,10 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
   };
 
   const stopWebScan = () => {
-    try { webScanReaderRef.current?.reset(); } catch { /* ignore */ }
+    try { webScanReaderRef.current?.reset(); } catch { }
     webScanReaderRef.current = null;
+    try { html5QrRef.current?.stop(); } catch { }
+    html5QrRef.current = null;
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
@@ -181,124 +200,179 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
     setScanning(true);
 
     if (isNative()) {
-      // ── Native: use @capacitor/camera to take photo, decode with ZXing ──
-      try {
-        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+      // ── Native: ML Kit live barcode scan (Android) / Camera photo (iOS fallback) ──
+      const { Capacitor } = await import("@capacitor/core");
+      const platform = Capacitor.getPlatform();
 
-        // Request permission
-        const perms = await Camera.requestPermissions({ permissions: ["camera"] });
-        if (perms.camera !== "granted" && perms.camera !== "limited") {
-          setScanning(false);
-          setError(`Camera permission denied. Go to Settings → Tribe → Camera → Allow.`);
-          return;
-        }
-
-        // Open native camera
-        const photo = await Camera.getPhoto({
-          quality: 90,
-          allowEditing: false,
-          resultType: CameraResultType.DataUrl,
-          source: CameraSource.Camera,
-          correctOrientation: true,
-        });
-
-        setScanning(false);
-
-        if (!photo?.dataUrl) { setError("No photo captured."); return; }
-
-        setLoading(true);
-        // Load image and decode barcode
-        const img = new Image();
-        img.src = photo.dataUrl;
-        await new Promise(r => { img.onload = r; img.onerror = r; });
-
-        const code = await decodeImageWithZXing(img);
-        if (code) {
-          toast.info(`Barcode: ${code}`);
-          setBarcode(code);
-          const res = await lookupBarcode(code);
-          if (res) setSelected(res);
-          else setError("not_found");
-        } else {
-          setError("No barcode detected. Try holding the camera steady and closer to the barcode, or enter manually.");
-        }
-      } catch (e) {
-        setScanning(false);
-        if (e?.message?.includes("cancelled") || e?.message?.includes("cancel")) return; // user cancelled
-        setError(`Camera error: ${e?.message}`);
-      } finally {
-        setLoading(false);
-      }
-
-    } else {
-      // ── Web: getUserMedia live stream + RAF decode loop ──
-      try {
-        const { BrowserMultiFormatReader, DecodeHintType } = await import("@zxing/library");
-        const hints = new Map();
-        hints.set(DecodeHintType.TRY_HARDER, true);
-        const reader = new BrowserMultiFormatReader(hints);
-        webScanReaderRef.current = reader;
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-
-        await new Promise(r => setTimeout(r, 150));
-        if (!videoRef.current) { stream.getTracks().forEach(t => t.stop()); setScanning(false); return; }
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-
-        // Try 1.5x zoom
+      if (platform === "android") {
+        // Android: ML Kit live scan
         try {
-          const track = stream.getVideoTracks()[0];
-          const caps = track.getCapabilities?.();
-          if (caps?.zoom) await track.applyConstraints({ advanced: [{ zoom: Math.min(1.5, caps.zoom.max) }] });
-        } catch { /* zoom not supported */ }
+          const { BarcodeScanner, BarcodeFormat } = await import("@capacitor-mlkit/barcode-scanning");
 
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        let active = true;
-        scanStopRef.current = () => { active = false; stopWebScan(); };
+          // Ensure Google Barcode Scanner Module installed
+          const { available } = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+          if (!available) {
+            toast.info("Preparing scanner…");
+            await BarcodeScanner.installGoogleBarcodeScannerModule();
+            await new Promise((resolve, reject) => {
+              let handle;
+              const timeout = setTimeout(() => { handle?.remove(); reject(new Error("Module install timed out")); }, 30000);
+              BarcodeScanner.addListener("googleBarcodeScannerModuleInstallProgress", (e) => {
+                if (e.state === "COMPLETED") { clearTimeout(timeout); handle?.remove(); resolve(); }
+                if (e.state === "FAILED" || e.state === "CANCELED") { clearTimeout(timeout); handle?.remove(); reject(new Error(`Install ${e.state}`)); }
+              }).then(h => { handle = h; });
+            });
+          }
 
-        const tick = () => {
-          if (!active || !videoRef.current || videoRef.current.readyState < 2) {
-            if (active) requestAnimationFrame(tick);
+          const { camera } = await BarcodeScanner.requestPermissions();
+          if (camera !== "granted" && camera !== "limited") {
+            setScanning(false);
+            setError("Camera permission denied. Go to Settings → Tribe → Camera → Allow.");
             return;
           }
-          const v = videoRef.current;
-          canvas.width = v.videoWidth;
-          canvas.height = v.videoHeight;
-          ctx.drawImage(v, 0, 0);
-          try {
-            const result = reader.decodeFromCanvas(canvas);
-            if (result) {
-              const code = result.getText();
-              active = false;
-              stopWebScan();
-              scanStopRef.current = null;
-              setBarcode(code);
-              setLoading(true);
-              lookupBarcode(code)
-                .then(res => { if (res) setSelected(res); else setError("not_found"); })
-                .catch(e => setError(`Lookup failed: ${e?.message}`))
-                .finally(() => setLoading(false));
-              return;
-            }
-          } catch { /* no barcode yet */ }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
 
+          document.documentElement.style.backgroundColor = "transparent";
+          document.body.style.backgroundColor = "transparent";
+
+          const formats = [BarcodeFormat.Ean13, BarcodeFormat.Ean8, BarcodeFormat.UpcA, BarcodeFormat.UpcE, BarcodeFormat.Code128, BarcodeFormat.Code39, BarcodeFormat.QrCode];
+
+          const cleanup = async () => {
+            document.documentElement.style.backgroundColor = "";
+            document.body.style.backgroundColor = "";
+            try { await BarcodeScanner.stopScan(); } catch { }
+            setScanning(false);
+          };
+
+          const listener = await BarcodeScanner.addListener("barcodeScanned", async (event) => {
+            await listener.remove();
+            scanStopRef.current = null;
+            await cleanup();
+            const code = event?.barcode?.rawValue;
+            if (!code) { setError("Scan returned empty value."); return; }
+            setBarcode(code);
+            setLoading(true);
+            try {
+              const res = await lookupBarcode(code);
+              if (res) { setServingG(100); setSelected({ ...res, _base100g: { calories: res.calories, protein_g: res.protein_g, carbs_g: res.carbs_g, fat_g: res.fat_g } }); }
+              else setError("not_found");
+            } catch (e) { setError(`Lookup failed: ${e?.message}`); }
+            setLoading(false);
+          });
+
+          await BarcodeScanner.startScan({ formats });
+          scanStopRef.current = async () => { await listener.remove(); await cleanup(); };
+
+        } catch (e) {
+          document.documentElement.style.backgroundColor = "";
+          document.body.style.backgroundColor = "";
+          setScanning(false);
+          setError(`Scanner error: ${e?.message}`);
+        }
+        return;
+      }
+
+      // iOS: html5-qrcode live scan inside WebView
+      setScanning(true);
+      // scanner mounts into div#html5-qr-reader — rendered when scanning=true
+      await new Promise(r => setTimeout(r, 200));
+      try {
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        const scanner = new Html5Qrcode("html5-qr-reader", {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.QR_CODE,
+          ]
+        });
+        html5QrRef.current = scanner;
+        scanStopRef.current = async () => {
+          try { await scanner.stop(); } catch { }
+          html5QrRef.current = null;
+          setScanning(false);
+        };
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 15, qrbox: { width: 300, height: 200 }, aspectRatio: 1.5 },
+          async (code) => {
+            await scanStopRef.current?.();
+            scanStopRef.current = null;
+            setBarcode(code);
+            setLoading(true);
+            try {
+              const res = await lookupBarcode(code);
+              if (res) { setServingG(100); setSelected({ ...res, _base100g: { calories: res.calories, protein_g: res.protein_g, carbs_g: res.carbs_g, fat_g: res.fat_g } }); }
+              else setError("not_found");
+            } catch (e) { setError(`Lookup failed: ${e?.message}`); }
+            setLoading(false);
+          },
+          () => { /* frame with no barcode — ignore */ }
+        );
       } catch (e) {
         setScanning(false);
-        if (e?.name === "NotAllowedError") setError("Camera permission denied. Allow camera in browser settings.");
-        else if (e?.name === "NotFoundError") setError("No camera found on this device.");
-        else setError(`Camera error: ${e?.message}`);
+        html5QrRef.current = null;
+        if (e?.message?.includes("ermission") || e?.name === "NotAllowedError")
+          setError("Camera permission denied. Go to Settings → Tribe → Camera → Allow.");
+        else
+          setError(`Scanner error: ${e?.message}`);
       }
+      return;
+    }
+
+    // ── Web: html5-qrcode ──
+    await new Promise(r => setTimeout(r, 200));
+    try {
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+      const scanner = new Html5Qrcode("html5-qr-reader", {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.QR_CODE,
+        ]
+      });
+      html5QrRef.current = scanner;
+      scanStopRef.current = async () => {
+        try { await scanner.stop(); } catch { }
+        html5QrRef.current = null;
+        setScanning(false);
+      };
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 15, qrbox: { width: 300, height: 200 }, aspectRatio: 1.5 },
+        async (code) => {
+          await scanStopRef.current?.();
+          scanStopRef.current = null;
+          setBarcode(code);
+          setLoading(true);
+          try {
+            const res = await lookupBarcode(code);
+            if (res) { setServingG(100); setSelected({ ...res, _base100g: { calories: res.calories, protein_g: res.protein_g, carbs_g: res.carbs_g, fat_g: res.fat_g } }); }
+            else setError("not_found");
+          } catch (e) { setError(`Lookup failed: ${e?.message}`); }
+          setLoading(false);
+        },
+        () => { /* no barcode in frame */ }
+      );
+    } catch (e) {
+      setScanning(false);
+      html5QrRef.current = null;
+      if (e?.name === "NotAllowedError" || e?.message?.includes("ermission"))
+        setError("Camera permission denied. Allow camera in browser settings.");
+      else if (e?.name === "NotFoundError")
+        setError("No camera found.");
+      else
+        setError(`Camera error: ${e?.message}`);
     }
   };
 
-  const reset = () => { stopActiveScan(); stopWebScan(); scanStopRef.current = null; setScanning(false); setMethod(null); setResults([]); setSelected(null); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
+  const reset = () => { stopActiveScan(); stopWebScan(); scanStopRef.current = null; setScanning(false); setMethod(null); setResults([]); setSelected(null); setServingG(100); setQuery(""); setBarcode(""); setAiHint(""); setAiPhoto(null); setLoading(false); setError(""); };
   const handleClose = () => { reset(); onClose(); };
 
   const handleAIPhotoSelect = async (e) => {
@@ -370,7 +444,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
     setLoading(true); setError(""); setSelected(null);
     try {
       const res = await lookupBarcode(code);
-      if (res) setSelected(res);
+      if (res) { setServingG(100); setSelected({ ...res, _base100g: { calories: res.calories, protein_g: res.protein_g, carbs_g: res.carbs_g, fat_g: res.fat_g } }); }
       else setError("not_found");
     } catch {
       setError("Lookup failed.");
@@ -553,7 +627,7 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
               <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                 <p className="text-[11px] text-muted-foreground px-1">{results.length} results — tap to select</p>
                 {results.map((food, i) => (
-                  <button key={i} onClick={() => setSelected({ ...food })}
+                  <button key={i} onClick={() => { setServingG(100); setSelected({ ...food, _base100g: { calories: food.calories, protein_g: food.protein_g, carbs_g: food.carbs_g, fat_g: food.fat_g } }); }}
                     className="w-full text-left bg-secondary hover:bg-primary/10 rounded-xl px-3 py-2.5 transition-colors">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <p className="text-sm font-medium flex-1 min-w-0 text-left">{food.name}</p>
@@ -584,16 +658,18 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
           <div className="space-y-3 pt-2">
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleBarcodeFile} />
 
-            {/* Web camera preview */}
-            {scanning && !isNative() && (
-              <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
-                <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="border-2 border-primary/70 rounded-lg w-3/4 h-1/2 opacity-60" />
-                </div>
+            {/* Live scanner — html5-qrcode (iOS native + web) or ZXing video (web) */}
+            {scanning && (
+              <div className="relative rounded-2xl overflow-hidden bg-black">
+                {/* html5-qrcode mounts here for iOS and web */}
+                <div id="html5-qr-reader" className="w-full" />
+                {/* ZXing fallback video for desktop web */}
+                {!isNative() && !html5QrRef.current && (
+                  <video ref={videoRef} className="w-full aspect-video object-cover" playsInline muted />
+                )}
                 <button
-                  onClick={stopWebScan}
-                  className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1.5">
+                  onClick={() => { stopActiveScan(); stopWebScan(); }}
+                  className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1.5 z-10">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -659,12 +735,54 @@ export default function FoodLookupDialog({ open, onClose, onSelect }) {
                 <Input value={selected.name} onChange={e => setSelected(s => ({ ...s, name: e.target.value }))} className="bg-card border-border font-medium" />
               </div>
               {selected.brand && <p className="text-xs text-muted-foreground">Brand: {selected.brand}</p>}
-              <p className="text-xs text-muted-foreground">Per: {selected.serving_size}</p>
+
+              {/* Serving size */}
+              <div>
+                <Label className="text-[10px] text-muted-foreground mb-1.5 block">Serving size</Label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    { label: "50g", g: 50 }, { label: "100g", g: 100 }, { label: "150g", g: 150 },
+                    { label: "200g", g: 200 }, { label: "250g", g: 250 }, { label: "300g", g: 300 },
+                    { label: "1 oz", g: 28 }, { label: "½ cup", g: 120 }, { label: "1 cup", g: 240 },
+                  ].map(({ label, g }) => (
+                    <button key={label} onClick={() => {
+                      setServingG(g);
+                      if (selected._base100g) {
+                        const r = g / 100;
+                        setSelected(s => ({ ...s, calories: Math.round(s._base100g.calories * r), protein_g: +((s._base100g.protein_g * r).toFixed(1)), carbs_g: +((s._base100g.carbs_g * r).toFixed(1)), fat_g: +((s._base100g.fat_g * r).toFixed(1)), serving_size: label }));
+                      }
+                    }}
+                      className={cn("text-[11px] px-2.5 py-1 rounded-full font-medium transition-colors",
+                        servingG === g ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground border border-border"
+                      )}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={servingG}
+                    onChange={e => {
+                      const g = parseFloat(e.target.value) || 0;
+                      setServingG(g);
+                      if (selected._base100g && g > 0) {
+                        const r = g / 100;
+                        setSelected(s => ({ ...s, calories: Math.round(s._base100g.calories * r), protein_g: +((s._base100g.protein_g * r).toFixed(1)), carbs_g: +((s._base100g.carbs_g * r).toFixed(1)), fat_g: +((s._base100g.fat_g * r).toFixed(1)), serving_size: `${g}g` }));
+                      }
+                    }}
+                    className="bg-card border-border text-sm w-24"
+                  />
+                  <span className="text-xs text-muted-foreground">grams</span>
+                </div>
+              </div>
+
+              {/* Macro display */}
               <div className="grid grid-cols-4 gap-2">
                 {[["Calories", "calories", "text-primary"], ["Protein g", "protein_g", "text-cyan-400"], ["Carbs g", "carbs_g", "text-amber-400"], ["Fat g", "fat_g", "text-pink-400"]].map(([label, key, color]) => (
-                  <div key={key}>
-                    <Label className={`text-[10px] mb-1 block ${color}`}>{label}</Label>
-                    <Input type="number" value={selected[key] || ""} onChange={e => editField(key, e.target.value)} className="bg-card border-border text-sm" />
+                  <div key={key} className="bg-card rounded-lg p-2 text-center">
+                    <p className={`text-sm font-bold ${color}`}>{selected[key] ?? 0}</p>
+                    <p className="text-[10px] text-muted-foreground">{label}</p>
                   </div>
                 ))}
               </div>

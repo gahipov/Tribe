@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Settings, LogOut, Dumbbell, UtensilsCrossed, Users, Loader2, MapPin, Camera, Shield, Scale, Target, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { ProBadge } from "@/components/PremiumGate";
-import { BarChart, Bar, XAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, Dot } from "recharts";
+import { X as XIcon } from "lucide-react";
 
 export default function Profile() {
   const { user, logout, updateProfile, isPremium, refreshPremium } = useAuth();
@@ -21,6 +22,8 @@ export default function Profile() {
   const [form, setForm] = useState({ full_name: "", bio: "", city: "", gym_name: "", fitness_interests: "" });
   const [goals, setGoals] = useState({ calorie_goal: 2000, protein_goal: 150, carbs_goal: 200, fat_goal: 65 });
   const [weightInput, setWeightInput] = useState("");
+  const [weightPhoto, setWeightPhoto] = useState(null); // { file, previewUrl }
+  const [selectedPoint, setSelectedPoint] = useState(null); // { date, weight_kg, photo_url }
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -37,13 +40,25 @@ export default function Profile() {
   const { data: bodyMeasurements = [] } = useQuery({ queryKey: ["body-measurements"], queryFn: async () => { const { data } = await supabase.from('body_measurements').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(14); return data || []; }, enabled: !!user && isPremium });
 
   const logWeightMutation = useMutation({
-    mutationFn: async (kg) => {
+    mutationFn: async ({ kg, photoFile }) => {
       const today = new Date().toISOString().split("T")[0];
-      const { error } = await supabase.from('body_measurements').upsert({ user_id: user.id, date: today, weight_kg: kg }, { onConflict: 'user_id,date' });
+      let photo_url = null;
+      if (photoFile) {
+        try {
+          const ext = photoFile.name.split(".").pop();
+          const path = `weight/${user.id}/${today}.${ext}`;
+          const { error: upErr } = await supabase.storage.from("body-photos").upload(path, photoFile, { upsert: true });
+          if (!upErr) {
+            const { data } = supabase.storage.from("body-photos").getPublicUrl(path);
+            photo_url = data.publicUrl;
+          }
+        } catch { /* photo upload failed — log weight anyway */ }
+      }
+      const { error } = await supabase.from('body_measurements').upsert({ user_id: user.id, date: today, weight_kg: kg, photo_url }, { onConflict: 'user_id,date' });
       if (error) throw error;
-      return { date: today, weight_kg: kg };
+      return { date: today, weight_kg: kg, photo_url };
     },
-    onMutate: async (kg) => {
+    onMutate: async ({ kg }) => {
       await queryClient.cancelQueries({ queryKey: ["body-measurements"] });
       const prev = queryClient.getQueryData(["body-measurements"]);
       const today = new Date().toISOString().split("T")[0];
@@ -52,6 +67,7 @@ export default function Profile() {
         return [{ user_id: user.id, date: today, weight_kg: kg }, ...filtered];
       });
       setWeightInput("");
+      setWeightPhoto(null);
       toast.success("Weight logged!");
       return { prev };
     },
@@ -107,7 +123,7 @@ export default function Profile() {
   if (!user) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary"/></div>;
 
   const stats = [{ label: "Workouts", value: workouts.length, icon: Dumbbell }, { label: "Meals", value: meals.length, icon: UtensilsCrossed }, { label: "Posts", value: posts.length, icon: Users }];
-  const weightData = [...bodyMeasurements].reverse().map(m => ({ date: m.date.slice(5), weight: m.weight_kg }));
+  const weightData = [...bodyMeasurements].reverse().map(m => ({ date: m.date.slice(5), weight: m.weight_kg, photo_url: m.photo_url, full: m }));
   const latestWeight = bodyMeasurements[0]?.weight_kg;
 
   return (
@@ -154,28 +170,99 @@ export default function Profile() {
 
         {/* Body weight (premium) */}
         {isPremium && (
-          <div className="w-full mt-6 bg-card rounded-2xl border border-border p-4">
-            <div className="flex items-center justify-between mb-3">
+          <div className="w-full mt-6 bg-card rounded-2xl border border-border p-4 space-y-3">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Scale className="h-4 w-4 text-primary"/>
                 <p className="font-heading font-semibold text-sm">Body Weight</p>
               </div>
               {latestWeight && <span className="font-heading font-bold text-primary">{latestWeight} kg</span>}
             </div>
+
+            {/* Graph */}
             {weightData.length > 1 && (
-              <ResponsiveContainer width="100%" height={80}>
-                <BarChart data={weightData}>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={weightData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                   <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false}/>
-                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "none", borderRadius: 8, fontSize: 12 }} cursor={false}/>
-                  <Bar dataKey="weight" fill="hsl(var(--primary))" radius={[3,3,0,0]} />
-                </BarChart>
+                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false}/>
+                  <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} formatter={(v) => [`${v} kg`, "Weight"]}/>
+                  <Line
+                    type="monotone"
+                    dataKey="weight"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={(props) => {
+                      const { cx, cy, payload } = props;
+                      return (
+                        <circle
+                          key={payload.date}
+                          cx={cx} cy={cy} r={payload.photo_url ? 6 : 4}
+                          fill={payload.photo_url ? "hsl(var(--primary))" : "hsl(var(--card))"}
+                          stroke="hsl(var(--primary))"
+                          strokeWidth={2}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => setSelectedPoint(payload.full)}
+                        />
+                      );
+                    }}
+                    activeDot={{ r: 7, onClick: (_, payload) => setSelectedPoint(payload?.payload?.full) }}
+                  />
+                </LineChart>
               </ResponsiveContainer>
             )}
-            <div className="flex gap-2 mt-3">
-              <Input value={weightInput} onChange={e => setWeightInput(e.target.value)} placeholder="Today's weight (kg)" type="number" className="bg-secondary border-border flex-1 h-9 text-sm"/>
-              <Button size="sm" onClick={() => logWeightMutation.mutate(parseFloat(weightInput))} disabled={!weightInput || logWeightMutation.isPending} className="h-9 rounded-xl font-heading">Log</Button>
+
+            {/* Log input */}
+            <div className="flex gap-2">
+              <Input
+                value={weightInput}
+                onChange={e => setWeightInput(e.target.value)}
+                placeholder="Today's weight (kg)"
+                type="number"
+                className="bg-secondary border-border flex-1 h-9 text-sm"
+              />
+              <label className="h-9 w-9 flex items-center justify-center rounded-xl bg-secondary border border-border cursor-pointer flex-shrink-0 hover:border-primary/40 transition-colors">
+                <Camera className="h-4 w-4 text-muted-foreground"/>
+                <input type="file" accept="image/*" className="hidden" onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) setWeightPhoto({ file: f, previewUrl: URL.createObjectURL(f) });
+                  e.target.value = "";
+                }}/>
+              </label>
+              <Button
+                size="sm"
+                onClick={() => logWeightMutation.mutate({ kg: parseFloat(weightInput), photoFile: weightPhoto?.file })}
+                disabled={!weightInput || logWeightMutation.isPending}
+                className="h-9 rounded-xl font-heading"
+              >
+                {logWeightMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : "Log"}
+              </Button>
             </div>
+
+            {/* Photo preview */}
+            {weightPhoto && (
+              <div className="relative rounded-xl overflow-hidden h-24">
+                <img src={weightPhoto.previewUrl} alt="progress" className="w-full h-full object-cover"/>
+                <button onClick={() => setWeightPhoto(null)} className="absolute top-1.5 right-1.5 bg-black/60 rounded-full p-1">
+                  <XIcon className="h-3 w-3 text-white"/>
+                </button>
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Weight point popup */}
+        {selectedPoint && (
+          <Dialog open onOpenChange={() => setSelectedPoint(null)}>
+            <DialogContent className="bg-card border-border max-w-xs">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-sm">{selectedPoint.date} — {selectedPoint.weight_kg} kg</DialogTitle>
+              </DialogHeader>
+              {selectedPoint.photo_url
+                ? <img src={selectedPoint.photo_url} alt="progress" className="w-full rounded-xl object-cover max-h-72"/>
+                : <p className="text-sm text-muted-foreground text-center py-6">No photo for this entry.</p>
+              }
+            </DialogContent>
+          </Dialog>
         )}
 
         {/* Admin panel */}
@@ -209,6 +296,11 @@ export default function Profile() {
           >
             <span className="text-sm text-muted-foreground">Restore Purchases</span>
           </button>
+          <div className="flex gap-4 px-3 pt-1 pb-2">
+            <a href="https://doc-hosting.flycricket.io/tribe-privacy-policy/7e096891-025c-41fc-8151-f9a99d5c962f/privacy" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a>
+            <span className="text-xs text-muted-foreground">·</span>
+            <a href="https://doc-hosting.flycricket.io/tribe-terms-of-use/62be134f-66f3-4e9c-9ccf-3e5070a1cf81/terms" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Use</a>
+          </div>
         </div>
 
         {posts.length > 0 && <div className="w-full mt-6"><p className="text-xs text-muted-foreground font-heading font-medium uppercase tracking-wider mb-3">Your Posts</p><div className="grid grid-cols-3 gap-1.5">{posts.filter(p => p.media_url).map(p => <div key={p.id} className="aspect-square rounded-xl overflow-hidden bg-secondary">{p.media_type==="video" ? <video src={p.media_url} className="w-full h-full object-cover" preload="metadata"/> : <img src={p.media_url} alt="" className="w-full h-full object-cover"/>}</div>)}</div></div>}

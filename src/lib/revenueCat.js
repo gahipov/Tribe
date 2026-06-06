@@ -1,17 +1,21 @@
 import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 
 const API_KEY_IOS = import.meta.env.VITE_REVENUECAT_IOS_KEY || 'appl_cIMcvGlvbIfUImUWUmXCCSurSCf';
+const API_KEY_ANDROID = import.meta.env.VITE_REVENUECAT_ANDROID_KEY || '';
 const ENTITLEMENT_ID = 'Tribe Pro';
 let _rcConfigured = false;
 
 export async function initRevenueCat(userId) {
-  if (!API_KEY_IOS) {
-    console.warn('RevenueCat: no API key');
-    return;
-  }
   try {
+    const { Capacitor } = await import('@capacitor/core');
+    const platform = Capacitor.getPlatform();
+    const apiKey = platform === 'android' ? API_KEY_ANDROID : API_KEY_IOS;
+    if (!apiKey) {
+      console.warn(`RevenueCat: no API key for platform ${platform}`);
+      return;
+    }
     await Purchases.setLogLevel({ level: LOG_LEVEL.DEBUG });
-    await Purchases.configure({ apiKey: API_KEY_IOS, appUserID: userId });
+    await Purchases.configure({ apiKey, appUserID: userId });
     _rcConfigured = true;
   } catch (e) {
     console.error('RevenueCat init failed:', e);
