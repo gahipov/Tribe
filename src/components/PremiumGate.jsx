@@ -62,6 +62,11 @@ function UpgradeModal({ open, onClose, feature }) {
               {loading ? "Opening…" : "Upgrade to Tribe Pro"}
             </button>
             <p className="text-[11px] text-muted-foreground mt-2">Cancel anytime · Managed by Apple</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              <a href="https://doc-hosting.flycricket.io/tribe-privacy-policy/7e096891-025c-41fc-8151-f9a99d5c962f/privacy" target="_blank" rel="noopener noreferrer" className="underline">Privacy Policy</a>
+              {" · "}
+              <a href="https://doc-hosting.flycricket.io/tribe-terms-of-use/62be134f-66f3-4e9c-9ccf-3e5070a1cf81/terms" target="_blank" rel="noopener noreferrer" className="underline">Terms of Use</a>
+            </p>
           </div>
         </div>
       </div>
