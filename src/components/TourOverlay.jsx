@@ -56,7 +56,7 @@ export default function TourOverlay({ onDone }) {
   };
 
   const overlay = (
-    <div className="fixed inset-0 animate-in fade-in duration-300" style={{ zIndex: 9999 }}>
+    <div className="animate-in fade-in duration-300" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, width: "100%", height: "100%", zIndex: 9999 }}>
       {/* Dark overlay with spotlight cutout */}
       <div
         className="absolute inset-0 transition-[clip-path] duration-300"
@@ -69,12 +69,14 @@ export default function TourOverlay({ onDone }) {
       <div
         className="bg-card border border-border rounded-2xl shadow-2xl p-4 space-y-2"
         style={{
-          position: "fixed",
+          position: "absolute",
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
           width: "min(280px, calc(100vw - 24px))",
           zIndex: 10000,
+          maxWidth: "calc(100vw - 24px)",
+          boxSizing: "border-box",
         }}
       >
         <div className="flex items-start justify-between gap-2">
