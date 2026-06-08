@@ -18,8 +18,7 @@ let package = Package(
         .package(name: "CapacitorSplashScreen", path: "..\..\..\node_modules\@capacitor\splash-screen"),
         .package(name: "CapacitorStatusBar", path: "..\..\..\node_modules\@capacitor\status-bar"),
         .package(name: "RevenuecatPurchasesCapacitor", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor"),
-        .package(name: "RevenuecatPurchasesCapacitorUi", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor-ui"),
-        .package(name: "CapacitorCommunityAppleSignIn", path: "..\..\..\node_modules\@capacitor-community\apple-sign-in")
+        .package(name: "RevenuecatPurchasesCapacitorUi", path: "..\..\..\node_modules\@revenuecat\purchases-capacitor-ui")
     ],
     targets: [
         .target(
@@ -33,8 +32,7 @@ let package = Package(
                 .product(name: "CapacitorSplashScreen", package: "CapacitorSplashScreen"),
                 .product(name: "CapacitorStatusBar", package: "CapacitorStatusBar"),
                 .product(name: "RevenuecatPurchasesCapacitor", package: "RevenuecatPurchasesCapacitor"),
-                .product(name: "RevenuecatPurchasesCapacitorUi", package: "RevenuecatPurchasesCapacitorUi"),
-                .product(name: "CapacitorCommunityAppleSignIn", package: "CapacitorCommunityAppleSignIn")
+                .product(name: "RevenuecatPurchasesCapacitorUi", package: "RevenuecatPurchasesCapacitorUi")
             ]
         )
     ]
