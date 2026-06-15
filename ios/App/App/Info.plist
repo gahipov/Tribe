@@ -57,5 +57,14 @@
 	<string>Tribe needs permission to save photos to your library.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Tribe needs microphone access to record workout videos.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.tribe.fitness</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
