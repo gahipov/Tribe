@@ -351,12 +351,12 @@ export default function Workouts() {
           const exStats = {};
           workouts.forEach(w => w.exercises?.forEach(e => {
             const vol = (Number(e.sets)||0)*(Number(e.reps)||0)*(Number(e.weight_lbs)||0);
-            const w_lbs = Number(e.weight_lbs) || 0;
+            const w_kg = Number(e.weight_lbs) || 0; // field named weight_lbs but stores kg
             const reps = Number(e.reps) || 1;
-            const orm = w_lbs > 0 ? Math.round(w_lbs * (1 + reps / 30)) : 0;
+            const orm = w_kg > 0 ? Math.round(w_kg * (1 + reps / 30)) : 0;
             if (!exStats[e.name]) exStats[e.name] = { volume: 0, pr: 0, orm: 0 };
             exStats[e.name].volume += vol;
-            if (w_lbs > exStats[e.name].pr) { exStats[e.name].pr = w_lbs; exStats[e.name].orm = orm; }
+            if (w_kg > exStats[e.name].pr) { exStats[e.name].pr = w_kg; exStats[e.name].orm = orm; }
           }));
           const topEx = Object.entries(exStats).sort((a, b) => b[1].volume - a[1].volume).slice(0, 5);
 
@@ -423,12 +423,12 @@ export default function Workouts() {
                         <div className="flex items-center gap-3 flex-shrink-0">
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Best set</p>
-                            <p className="text-sm font-heading font-bold text-primary">{s.pr} lbs</p>
+                            <p className="text-sm font-heading font-bold text-primary">{s.pr} kg</p>
                           </div>
                           {s.orm > s.pr && (
                             <div className="text-right">
                               <p className="text-xs text-muted-foreground">Est. 1RM</p>
-                              <p className="text-sm font-heading font-bold text-cyan-400">{s.orm} lbs</p>
+                              <p className="text-sm font-heading font-bold text-cyan-400">{s.orm} kg</p>
                             </div>
                           )}
                         </div>
@@ -445,7 +445,7 @@ export default function Workouts() {
                     <p className="font-heading font-semibold text-sm">Total Volume Lifted</p>
                     <p className="text-xs text-muted-foreground mt-0.5">All time · sets × reps × weight</p>
                   </div>
-                  <p className="font-heading font-bold text-xl text-primary">{(totalVolume / 1000).toFixed(1)}k lbs</p>
+                  <p className="font-heading font-bold text-xl text-primary">{(totalVolume / 1000).toFixed(1)}k kg</p>
                 </div>
               )}
 
@@ -462,7 +462,7 @@ export default function Workouts() {
                             <div className="h-full bg-primary rounded-full" style={{ width: `${(s.volume / topEx[0][1].volume) * 100}%` }} />
                           </div>
                         </div>
-                        <span className="text-xs text-muted-foreground flex-shrink-0">{s.volume >= 1000 ? (s.volume/1000).toFixed(1)+"k" : s.volume} lbs</span>
+                        <span className="text-xs text-muted-foreground flex-shrink-0">{s.volume >= 1000 ? (s.volume/1000).toFixed(1)+"k" : s.volume} kg</span>
                       </div>
                     ))}
                   </div>

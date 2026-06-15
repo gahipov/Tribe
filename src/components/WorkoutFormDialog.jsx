@@ -18,7 +18,7 @@ export default function WorkoutFormDialog({ open, onOpenChange, editWorkout }) {
   const [workoutType, setWorkoutType] = useState("strength");
   const [duration, setDuration] = useState("");
   const [notes, setNotes] = useState("");
-  const [exercises, setExercises] = useState([{ name: "", sets: "", reps: "", weight_lbs: "" }]);
+  const [exercises, setExercises] = useState([{ name: "", sets: "", reps: "", weight_kg: "" }]);
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -26,9 +26,9 @@ export default function WorkoutFormDialog({ open, onOpenChange, editWorkout }) {
     if (editWorkout) {
       setDate(editWorkout.date || ""); setWorkoutType(editWorkout.workout_type || "strength");
       setDuration(editWorkout.duration_minutes?.toString() || ""); setNotes(editWorkout.notes || "");
-      setExercises(editWorkout.exercises?.length ? editWorkout.exercises.map(e => ({ name: e.name||"", sets: e.sets?.toString()||"", reps: e.reps?.toString()||"", weight_lbs: e.weight_lbs?.toString()||"" })) : [{ name: "", sets: "", reps: "", weight_lbs: "" }]);
+      setExercises(editWorkout.exercises?.length ? editWorkout.exercises.map(e => ({ name: e.name||"", sets: e.sets?.toString()||"", reps: e.reps?.toString()||"", weight_kg: e.weight_lbs?.toString()||"" })) : [{ name: "", sets: "", reps: "", weight_kg: "" }]);
     } else {
-      setDate(new Date().toISOString().split("T")[0]); setWorkoutType("strength"); setDuration(""); setNotes(""); setExercises([{ name: "", sets: "", reps: "", weight_lbs: "" }]);
+      setDate(new Date().toISOString().split("T")[0]); setWorkoutType("strength"); setDuration(""); setNotes(""); setExercises([{ name: "", sets: "", reps: "", weight_kg: "" }]);
     }
   }, [editWorkout, open]);
 
@@ -46,7 +46,7 @@ export default function WorkoutFormDialog({ open, onOpenChange, editWorkout }) {
   });
 
   const handleSubmit = () => {
-    const exList = exercises.filter(e => e.name.trim()).map(e => ({ name: e.name, sets: parseInt(e.sets)||0, reps: parseInt(e.reps)||0, weight_lbs: parseFloat(e.weight_lbs)||0 }));
+    const exList = exercises.filter(e => e.name.trim()).map(e => ({ name: e.name, sets: parseInt(e.sets)||0, reps: parseInt(e.reps)||0, weight_lbs: parseFloat(e.weight_kg)||0 }));
     mutation.mutate({ date, workout_type: workoutType, duration_minutes: parseInt(duration)||0, notes, exercises: exList });
   };
 
@@ -63,8 +63,8 @@ export default function WorkoutFormDialog({ open, onOpenChange, editWorkout }) {
           </div>
           <div><Label className="text-xs text-muted-foreground mb-1.5 block">Duration (minutes)</Label><Input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="45" className="bg-secondary border-border" /></div>
           <div>
-            <div className="flex items-center justify-between mb-2"><Label className="text-xs text-muted-foreground">Exercises</Label><Button variant="ghost" size="sm" onClick={() => setExercises([...exercises, { name: "", sets: "", reps: "", weight_lbs: "" }])} className="text-primary text-xs h-7"><Plus className="h-3 w-3 mr-1" /> Add</Button></div>
-            <div className="space-y-2">{exercises.map((ex, i) => <div key={i} className="flex gap-2 items-start"><Input placeholder="Exercise" value={ex.name} onChange={e => updateExercise(i, "name", e.target.value)} className="bg-secondary border-border flex-[2]" /><Input placeholder="Sets" type="number" value={ex.sets} onChange={e => updateExercise(i, "sets", e.target.value)} className="bg-secondary border-border flex-1" /><Input placeholder="Reps" type="number" value={ex.reps} onChange={e => updateExercise(i, "reps", e.target.value)} className="bg-secondary border-border flex-1" /><Input placeholder="lbs" type="number" value={ex.weight_lbs} onChange={e => updateExercise(i, "weight_lbs", e.target.value)} className="bg-secondary border-border flex-1" />{exercises.length > 1 && <button onClick={() => setExercises(exercises.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive mt-2"><X className="h-4 w-4" /></button>}</div>)}</div>
+            <div className="flex items-center justify-between mb-2"><Label className="text-xs text-muted-foreground">Exercises</Label><Button variant="ghost" size="sm" onClick={() => setExercises([...exercises, { name: "", sets: "", reps: "", weight_kg: "" }])} className="text-primary text-xs h-7"><Plus className="h-3 w-3 mr-1" /> Add</Button></div>
+            <div className="space-y-2">{exercises.map((ex, i) => <div key={i} className="flex gap-2 items-start"><Input placeholder="Exercise" value={ex.name} onChange={e => updateExercise(i, "name", e.target.value)} className="bg-secondary border-border flex-[2]" /><Input placeholder="Sets" type="number" value={ex.sets} onChange={e => updateExercise(i, "sets", e.target.value)} className="bg-secondary border-border flex-1" /><Input placeholder="Reps" type="number" value={ex.reps} onChange={e => updateExercise(i, "reps", e.target.value)} className="bg-secondary border-border flex-1" /><Input placeholder="kg" type="number" value={ex.weight_kg} onChange={e => updateExercise(i, "weight_kg", e.target.value)} className="bg-secondary border-border flex-1" />{exercises.length > 1 && <button onClick={() => setExercises(exercises.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive mt-2"><X className="h-4 w-4" /></button>}</div>)}</div>
           </div>
           <Textarea placeholder="Notes..." value={notes} onChange={e => setNotes(e.target.value)} className="bg-secondary border-border resize-none" />
           <Button onClick={handleSubmit} disabled={mutation.isPending || !date} className="w-full font-heading font-semibold">{mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}{editWorkout ? "Update Workout" : "Log Workout"}</Button>

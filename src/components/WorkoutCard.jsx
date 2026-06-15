@@ -18,7 +18,7 @@ export default function WorkoutCard({ workout, onEdit, onDelete }) {
 
   // Calculate total volume (sets × reps × weight)
   const totalVolume = workout.exercises?.reduce((acc, ex) => {
-    return acc + (ex.sets || 0) * (ex.reps || 0) * (ex.weight_lbs || 0);
+    return acc + (ex.sets || 0) * (ex.reps || 0) * (ex.weight_lbs || 0); // weight_lbs stores kg values
   }, 0) || 0;
 
   const totalSets = workout.exercises?.reduce((acc, ex) => acc + (ex.sets || 0), 0) || 0;
@@ -56,7 +56,7 @@ export default function WorkoutCard({ workout, onEdit, onDelete }) {
               <>
                 <span>·</span>
                 <span className="flex items-center gap-0.5 text-primary">
-                  <TrendingUp className="h-3 w-3" />{(totalVolume).toLocaleString()} lbs vol
+                  <TrendingUp className="h-3 w-3" />{(totalVolume).toLocaleString()} kg vol
                 </span>
               </>
             )}
@@ -85,11 +85,11 @@ export default function WorkoutCard({ workout, onEdit, onDelete }) {
               <div className="text-right">
                 <span className="text-muted-foreground text-xs">
                   {ex.sets > 0 && `${ex.sets} × `}{ex.reps > 0 && ex.reps}
-                  {ex.weight_lbs > 0 ? ` @ ${ex.weight_lbs} lbs` : ""}
+                  {ex.weight_lbs > 0 ? ` @ ${ex.weight_lbs} kg` : ""}
                 </span>
                 {ex.sets > 0 && ex.reps > 0 && ex.weight_lbs > 0 && (
                   <p className="text-[10px] text-primary/70">
-                    {(ex.sets * ex.reps * ex.weight_lbs).toLocaleString()} lbs
+                    {(ex.sets * ex.reps * ex.weight_lbs).toLocaleString()} kg vol
                   </p>
                 )}
               </div>

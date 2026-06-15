@@ -8,18 +8,14 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-// Progressive overload: if all sets hit target reps, suggest +5lbs next time
-// Here we use last session data to suggest weight
+// Returns last session weight (kg) and whether progression is available — does NOT auto-apply
 function getSuggested(exercise, history) {
-  // Find most recent workout that has this exercise
   for (const w of history) {
     const found = w.exercises?.find(e => e.name?.toLowerCase() === exercise.name?.toLowerCase());
     if (found) {
-      // Check if they hit all reps last time (stored as completed_sets metadata via notes hack or just use weight)
-      // If weight exists, suggest same or +5 depending on notes flag
       const didComplete = w.notes?.includes(`PO_COMPLETE:${exercise.name}`);
       return {
-        weight: didComplete ? (found.weight_lbs || 0) + 5 : (found.weight_lbs || 0),
+        weight: found.weight_lbs || 0, // stored as kg despite field name
         reps: found.reps || exercise.reps_target,
         isProgression: didComplete,
       };
@@ -81,6 +77,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
   // setLogs: { [exIdx]: [{ reps, weight, done }] }
   const [logs, setLogs] = useState({});
   const [done, setDone] = useState(false);
+  const [progressionPrompted, setProgressionPrompted] = useState({});
   const swipeStartX = useRef(null);
 
   // Timer
@@ -126,6 +123,23 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
     weight: suggested.weight || 0,
     done: false,
   }));
+
+  const showProgressionPrompt = suggested.isProgression && !progressionPrompted[exIdx] && !logs[exIdx];
+
+  const applyProgression = (accept) => {
+    if (accept) {
+      const newWeight = suggested.weight + 2.5;
+      setLogs(prev => ({
+        ...prev,
+        [exIdx]: Array.from({ length: current.sets }, () => ({
+          reps: suggested.reps || current.reps_target,
+          weight: newWeight,
+          done: false,
+        })),
+      }));
+    }
+    setProgressionPrompted(prev => ({ ...prev, [exIdx]: true }));
+  };
 
   const setCurrentLog = (updater) => {
     setLogs(prev => ({
@@ -315,9 +329,9 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
                 Rest {current.rest}
               </span>
             )}
-            {suggested.isProgression && (
+            {suggested.isProgression && progressionPrompted[exIdx] && (
               <span className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
-                <TrendingUp className="h-3 w-3" />+5 lbs from last time
+                <TrendingUp className="h-3 w-3" />Last: {suggested.weight} kg
               </span>
             )}
           </div>
@@ -326,6 +340,24 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
             <p className="text-xs text-muted-foreground italic mt-1.5">{current.notes}</p>
           )}
         </div>
+
+        {/* Progression prompt */}
+        {showProgressionPrompt && (
+          <div className="bg-card border border-primary/30 rounded-2xl p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="h-4 w-4 text-primary flex-shrink-0" />
+              <p className="text-sm font-medium">You completed all sets last time at <span className="text-primary font-bold">{suggested.weight} kg</span>. Increase to <span className="text-primary font-bold">{suggested.weight + 2.5} kg</span>?</p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" className="flex-1 rounded-xl font-heading h-9" onClick={() => applyProgression(true)}>
+                +2.5 kg — Let's go
+              </Button>
+              <Button size="sm" variant="outline" className="flex-1 rounded-xl font-heading h-9" onClick={() => applyProgression(false)}>
+                Keep {suggested.weight} kg
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Rest timer overlay */}
         {resting && (
@@ -338,7 +370,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
         <div className="space-y-2.5 mb-4">
           <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 px-1 mb-1">
             <span className="text-[10px] text-muted-foreground text-center">Set</span>
-            <span className="text-[10px] text-muted-foreground text-center">Weight (lbs)</span>
+            <span className="text-[10px] text-muted-foreground text-center">Weight (kg)</span>
             <span className="text-[10px] text-muted-foreground text-center">Reps</span>
             <span />
           </div>
@@ -358,7 +390,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
                 </span>
                 {/* Weight input */}
                 <div className="flex items-center gap-1">
-                  <button onClick={() => updateSet(i, "weight", Math.max(0, (set.weight || 0) - 5))}
+                  <button onClick={() => updateSet(i, "weight", Math.max(0, Math.round(((set.weight || 0) - 2.5) * 10) / 10))}
                     className="h-7 w-7 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0"
                     disabled={isPast}>
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -371,7 +403,7 @@ export default function ActiveWorkout({ plan, day, onFinish, onCancel }) {
                     className="h-8 text-center text-sm font-heading font-semibold bg-secondary border-0 px-1"
                     placeholder="0"
                   />
-                  <button onClick={() => updateSet(i, "weight", (set.weight || 0) + 5)}
+                  <button onClick={() => updateSet(i, "weight", Math.round(((set.weight || 0) + 2.5) * 10) / 10)}
                     className="h-7 w-7 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0"
                     disabled={isPast}>
                     <ChevronUp className="h-3.5 w-3.5" />
