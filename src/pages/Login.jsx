@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
-import { signInWithApple } from "@/lib/appleAuth";
+import { signInWithApple, signInWithGoogle } from "@/lib/appleAuth";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -25,11 +25,16 @@ export default function Login() {
   };
 
   const handleGoogle = async () => {
-    const { Capacitor } = await import('@capacitor/core');
-    const redirectTo = Capacitor.isNativePlatform()
-      ? 'com.tribe.fitness://login'
-      : window.location.origin;
-    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+    setError("");
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+      navigate("/");
+    } catch (e) {
+      setError(e.message || "Google Sign In failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleApple = async () => {

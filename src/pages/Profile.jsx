@@ -8,16 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Settings, LogOut, Dumbbell, UtensilsCrossed, Users, Loader2, MapPin, Camera, Shield, Scale, Target, Sparkles } from "lucide-react";
+import { Settings, LogOut, Dumbbell, UtensilsCrossed, Users, Loader2, MapPin, Camera, Shield, Scale, Target, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ProBadge } from "@/components/PremiumGate";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, Dot } from "recharts";
 import { X as XIcon } from "lucide-react";
 
 export default function Profile() {
-  const { user, logout, updateProfile, isPremium, refreshPremium } = useAuth();
+  const { user, logout, deleteAccount, updateProfile, isPremium, refreshPremium } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ full_name: "", bio: "", city: "", gym_name: "", fitness_interests: "" });
   const [goals, setGoals] = useState({ calorie_goal: 2000, protein_goal: 150, carbs_goal: 200, fat_goal: 65 });
@@ -97,6 +99,17 @@ export default function Profile() {
     setSaving(true);
     await updateProfile(goals);
     toast.success("Goals updated!"); setSaving(false); setGoalsOpen(false);
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      toast.success("Account deleted");
+    } catch (err) {
+      toast.error("Failed to delete account: " + (err?.message || "unknown error"));
+      setDeleting(false);
+    }
   };
 
   const handleRestore = async () => {
@@ -296,6 +309,13 @@ export default function Profile() {
           >
             <span className="text-sm text-muted-foreground">Restore Purchases</span>
           </button>
+          <button
+            onClick={() => setDeleteOpen(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-destructive/10 transition-colors text-left"
+          >
+            <Trash2 className="h-5 w-5 text-destructive" />
+            <span className="text-sm font-medium text-destructive">Delete Account</span>
+          </button>
           <div className="flex gap-4 px-3 pt-1 pb-2">
             <a href="https://doc-hosting.flycricket.io/tribe-privacy-policy/7e096891-025c-41fc-8151-f9a99d5c962f/privacy" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a>
             <span className="text-xs text-muted-foreground">·</span>
@@ -316,6 +336,25 @@ export default function Profile() {
               </div>
             ))}
             <Button onClick={handleSaveGoals} disabled={saving} className="w-full font-heading font-semibold">{saving ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : null}Save Goals</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-destructive">Delete Account</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              This permanently deletes your account and all your data — workouts, meals, posts, tribes, and progress photos. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteOpen(false)} disabled={deleting}>Cancel</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteAccount} disabled={deleting}>
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : null}Delete
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

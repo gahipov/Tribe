@@ -9,7 +9,6 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import Onboarding from '@/components/Onboarding';
 import TourOverlay from "@/components/TourOverlay";
 import { useEffect, Component, useState } from 'react';
-import { supabase } from '@/api/supabaseClient';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -90,23 +89,9 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
-  // Handle deep link after Google OAuth on native iOS/Android
-  useEffect(() => {
-    import('@capacitor/app').then(({ App: CapApp }) => {
-      CapApp.addListener('appUrlOpen', ({ url }) => {
-        // url = com.tribe.fitness://login#access_token=...
-        const hash = url.split('#')[1];
-        if (hash) {
-          const params = new URLSearchParams(hash);
-          const access_token = params.get('access_token');
-          const refresh_token = params.get('refresh_token');
-          if (access_token && refresh_token) {
-            supabase.auth.setSession({ access_token, refresh_token });
-          }
-        }
-      });
-    }).catch(() => {}); // silently ignore on web
-  }, []);
+  // OAuth deep link callbacks (Apple/Google) are handled directly inside
+  // signInWithApple/signInWithGoogle (src/lib/appleAuth.js), which await
+  // the appUrlOpen event themselves while the in-app browser is open.
 
   return (
     <ErrorBoundary>

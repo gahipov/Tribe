@@ -81,6 +81,19 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
   };
 
+  const deleteAccount = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Not signed in");
+    const { error } = await supabase.functions.invoke('delete-account', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (error) throw error;
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setIsAuthenticated(false);
+  };
+
   const navigateToLogin = () => { window.location.href = '/login'; };
 
   const updateProfile = async (updates) => {
@@ -118,6 +131,7 @@ export const AuthProvider = ({ children }) => {
       appPublicSettings,
       authChecked,
       logout,
+      deleteAccount,
       navigateToLogin,
       checkUserAuth,
       checkAppState,
