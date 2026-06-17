@@ -316,10 +316,12 @@ export default function Profile() {
             <Trash2 className="h-5 w-5 text-destructive" />
             <span className="text-sm font-medium text-destructive">Delete Account</span>
           </button>
-          <div className="flex gap-4 px-3 pt-1 pb-2">
+          <div className="flex gap-4 px-3 pt-1 pb-2 flex-wrap">
             <a href="https://doc-hosting.flycricket.io/tribe-privacy-policy/7e096891-025c-41fc-8151-f9a99d5c962f/privacy" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a>
             <span className="text-xs text-muted-foreground">·</span>
             <a href="https://doc-hosting.flycricket.io/tribe-terms-of-use/62be134f-66f3-4e9c-9ccf-3e5070a1cf81/terms" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Use</a>
+            <span className="text-xs text-muted-foreground">·</span>
+            <a href="mailto:support@tribe.fit" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact Support</a>
           </div>
         </div>
 

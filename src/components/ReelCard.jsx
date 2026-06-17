@@ -1,5 +1,5 @@
 // src/components/ReelCard.jsx
-import { Heart, MessageCircle, Share2, MapPin, Play, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, MapPin, Play, Trash2, Flag, UserX } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
@@ -8,10 +8,11 @@ import { cn } from "@/lib/utils";
 import moment from "moment";
 import { toast } from "sonner";
 
-export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare }) {
+export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare, onBlock }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [liked, setLiked] = useState(false);
+  const [flagMenu, setFlagMenu] = useState(false);
   const isOwner = user?.id === post.user_id;
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
@@ -82,6 +83,19 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare 
       }, 300);
       lastTapRef.current = now;
     }
+  };
+
+  const handleReport = async () => {
+    setFlagMenu(false);
+    try { await supabase.from('reports').insert({ reporter_id: user?.id, post_id: post.id, reported_user_id: post.user_id }); } catch { /* best effort */ }
+    toast.success("Post reported. We'll review it shortly.");
+  };
+
+  const handleBlock = async () => {
+    setFlagMenu(false);
+    try { await supabase.from('blocked_users').insert({ user_id: user?.id, blocked_user_id: post.user_id }); } catch { /* best effort */ }
+    toast.success("User blocked and removed from your feed.");
+    onBlock?.(post.user_id);
   };
 
   const handleDelete = async () => {
@@ -222,12 +236,30 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare 
           </div>
         </button>
 
-        {isOwner && (
+        {isOwner ? (
           <button onClick={handleDelete} className="flex flex-col items-center gap-1">
             <div className="h-11 w-11 rounded-full bg-black/30 flex items-center justify-center">
               <Trash2 className="h-5 w-5 text-white/70" />
             </div>
           </button>
+        ) : (
+          <div className="relative">
+            <button onClick={() => setFlagMenu(v => !v)} className="flex flex-col items-center gap-1">
+              <div className="h-11 w-11 rounded-full bg-black/30 flex items-center justify-center">
+                <Flag className="h-5 w-5 text-white/70" />
+              </div>
+            </button>
+            {flagMenu && (
+              <div className="absolute right-12 bottom-0 z-50 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[160px]">
+                <button onClick={handleReport} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-foreground hover:bg-secondary transition-colors text-left">
+                  <Flag className="h-4 w-4 text-muted-foreground" /> Report post
+                </button>
+                <button onClick={handleBlock} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors text-left">
+                  <UserX className="h-4 w-4" /> Block user
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

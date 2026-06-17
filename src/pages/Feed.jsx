@@ -7,13 +7,18 @@ import CommentsDrawer from "../components/CommentsDrawer";
 import ShareSheet from "../components/ShareSheet";
 import CreatePostDialog from "../components/CreatePostDialog";
 import { Loader2, Flame } from "lucide-react";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 export default function Feed() {
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [activeCommentPost, setActiveCommentPost] = useState(null);
   const [activeSharePost, setActiveSharePost] = useState(null);
+  const [blockedIds, setBlockedIds] = useState(new Set());
   const containerRef = useRef(null);
+
+  const handleBlock = useCallback((userId) => {
+    setBlockedIds(prev => new Set([...prev, userId]));
+  }, []);
 
   const { data: rawPosts = [], isLoading } = useQuery({
     queryKey: ["posts"],
@@ -34,8 +39,8 @@ export default function Feed() {
     if (shuffledRef.current.length === 0) {
       shuffledRef.current = [...rawPosts].sort(() => Math.random() - 0.5);
     }
-    return shuffledRef.current;
-  }, [rawPosts]);
+    return shuffledRef.current.filter(p => !blockedIds.has(p.user_id));
+  }, [rawPosts, blockedIds]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -100,11 +105,12 @@ export default function Feed() {
                 </div>
               ) : (
                 <ReelCard
-                post={post}
-                isVisible={visibleIndex === i}
-                onOpenComments={() => setActiveCommentPost(post)}
-                onOpenShare={() => setActiveSharePost(post)}
-              />
+                  post={post}
+                  isVisible={visibleIndex === i}
+                  onOpenComments={() => setActiveCommentPost(post)}
+                  onOpenShare={() => setActiveSharePost(post)}
+                  onBlock={handleBlock}
+                />
               )}
             </div>
           </div>

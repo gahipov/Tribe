@@ -48,7 +48,12 @@ export default function Onboarding({ onDone }) {
   const { user, updateProfile } = useAuth();
   const queryClient = useQueryClient();
   const [step, setStep]               = useState(0);
-  const [name, setName]               = useState(user?.full_name || "");
+  const [name, setName]               = useState(
+    user?.full_name ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    ""
+  );
   const [gender, setGender]           = useState(null);
   const [age, setAge]                 = useState("");
   const [weight, setWeight]           = useState("");
@@ -104,7 +109,7 @@ export default function Onboarding({ onDone }) {
         <Input value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
           className="bg-secondary border-border text-lg h-12" autoFocus />
       </div>
-      <Button onClick={() => setStep(1)} disabled={!name.trim()} className="w-full h-12 font-heading font-bold rounded-2xl">
+      <Button onClick={() => setStep(1)} className="w-full h-12 font-heading font-bold rounded-2xl">
         Let's Go <ChevronRight className="h-4 w-4 ml-1" />
       </Button>
     </div>,
