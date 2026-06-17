@@ -13,7 +13,10 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
   const queryClient = useQueryClient();
   const [liked, setLiked] = useState(false);
   const [flagMenu, setFlagMenu] = useState(false);
+  const [reportDialog, setReportDialog] = useState(false);
   const isOwner = user?.id === post.user_id;
+
+  const REPORT_REASONS = ["Spam", "Inappropriate content", "Harassment", "Misinformation", "Other"];
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [playing, setPlaying] = useState(false);
@@ -85,9 +88,14 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
     }
   };
 
-  const handleReport = async () => {
+  const handleReport = () => {
     setFlagMenu(false);
-    try { await supabase.from('reports').insert({ reporter_id: user?.id, post_id: post.id, reported_user_id: post.user_id }); } catch { /* best effort */ }
+    setReportDialog(true);
+  };
+
+  const submitReport = async (reason) => {
+    setReportDialog(false);
+    try { await supabase.from('reports').insert({ reporter_id: user?.id, post_id: post.id, reported_user_id: post.user_id, reason }); } catch { /* best effort */ }
     toast.success("Post reported. We'll review it shortly.");
   };
 
@@ -201,7 +209,7 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
             ))}
           </div>
         )}
-        <p className="text-white/40 text-xs mt-1">{moment(post.created_date).fromNow()}</p>
+        <p className="text-white/40 text-xs mt-1">{moment(post.created_at).fromNow()}</p>
       </div>
 
       {/* Right sidebar: action buttons */}
@@ -263,6 +271,24 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
         )}
       </div>
 
+      {/* Report reason dialog */}
+      {reportDialog && (
+        <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setReportDialog(false)}>
+          <div className="bg-card rounded-t-2xl w-full p-5 pb-8" onClick={e => e.stopPropagation()}>
+            <p className="font-heading font-bold text-base mb-1">Report post</p>
+            <p className="text-xs text-muted-foreground mb-4">Why are you reporting this?</p>
+            <div className="space-y-2">
+              {REPORT_REASONS.map(reason => (
+                <button key={reason} onClick={() => submitReport(reason)}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-secondary hover:bg-primary/10 hover:text-primary transition-colors text-sm font-medium">
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setReportDialog(false)} className="w-full mt-3 text-sm text-muted-foreground py-2">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

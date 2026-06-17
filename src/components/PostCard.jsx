@@ -11,7 +11,9 @@ export default function PostCard({ post, onBlock }) {
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportDialog, setReportDialog] = useState(false);
   const menuRef = useRef(null);
+  const REPORT_REASONS = ["Spam", "Inappropriate content", "Harassment", "Misinformation", "Other"];
 
   useEffect(() => {
     const handleClick = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
@@ -27,15 +29,16 @@ export default function PostCard({ post, onBlock }) {
     await supabase.from('posts').update({ likes_count: newCount }).eq('id', post.id);
   };
 
-  const handleReport = async () => {
+  const handleReport = () => {
     setMenuOpen(false);
+    setReportDialog(true);
+  };
+
+  const submitReport = async (reason) => {
+    setReportDialog(false);
     try {
-      await supabase.from('reports').insert({
-        reporter_id: user?.id,
-        post_id: post.id,
-        reported_user_id: post.user_id,
-      });
-    } catch { /* table may not exist yet — still show success to user */ }
+      await supabase.from('reports').insert({ reporter_id: user?.id, post_id: post.id, reported_user_id: post.user_id, reason });
+    } catch { /* best effort */ }
     toast.success("Post reported. We'll review it shortly.");
   };
 
@@ -65,7 +68,7 @@ export default function PostCard({ post, onBlock }) {
         <div className="flex-1 min-w-0">
           <p className="font-heading font-semibold text-sm text-foreground truncate">{post.author_name || post.created_by}</p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{moment(post.created_date).fromNow()}</span>
+            <span>{moment(post.created_at).fromNow()}</span>
             {post.location && <><span>·</span><span className="flex items-center gap-0.5"><MapPin className="h-3 w-3" />{post.location}</span></>}
           </div>
         </div>
@@ -105,6 +108,23 @@ export default function PostCard({ post, onBlock }) {
         <button className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"><MessageCircle className="h-5 w-5" /><span className="text-sm">0</span></button>
         <button className="text-muted-foreground hover:text-foreground transition-colors"><Share2 className="h-5 w-5" /></button>
       </div>
+      {reportDialog && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setReportDialog(false)}>
+          <div className="bg-card rounded-t-2xl w-full max-w-lg p-5 pb-8" onClick={e => e.stopPropagation()}>
+            <p className="font-heading font-bold text-base mb-1">Report post</p>
+            <p className="text-xs text-muted-foreground mb-4">Why are you reporting this?</p>
+            <div className="space-y-2">
+              {REPORT_REASONS.map(reason => (
+                <button key={reason} onClick={() => submitReport(reason)}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-secondary hover:bg-primary/10 hover:text-primary transition-colors text-sm font-medium">
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setReportDialog(false)} className="w-full mt-3 text-sm text-muted-foreground py-2">Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

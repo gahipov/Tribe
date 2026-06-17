@@ -40,6 +40,13 @@ export default function Profile() {
   const { data: posts = [] } = useQuery({ queryKey: ["my-posts"], queryFn: async () => { const { data } = await supabase.from('posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }); return data || []; }, enabled: !!user });
   const { data: myTribes = [] } = useQuery({ queryKey: ["my-tribes"], queryFn: async () => { const { data } = await supabase.from('tribe_members').select('tribe_id, tribes(name)').eq('user_id', user.id); return data || []; }, enabled: !!user });
   const { data: bodyMeasurements = [] } = useQuery({ queryKey: ["body-measurements"], queryFn: async () => { const { data } = await supabase.from('body_measurements').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(14); return data || []; }, enabled: !!user && isPremium });
+  const { data: blockedUsers = [], refetch: refetchBlocked } = useQuery({ queryKey: ["blocked-users"], queryFn: async () => { const { data } = await supabase.from('blocked_users').select('*, profiles:blocked_user_id(full_name, profile_image)').eq('user_id', user.id); return data || []; }, enabled: !!user });
+
+  const handleUnblock = async (blockedUserId) => {
+    await supabase.from('blocked_users').delete().eq('user_id', user.id).eq('blocked_user_id', blockedUserId);
+    refetchBlocked();
+    toast.success("User unblocked.");
+  };
 
   const logWeightMutation = useMutation({
     mutationFn: async ({ kg, photoFile }) => {
@@ -309,6 +316,25 @@ export default function Profile() {
           >
             <span className="text-sm text-muted-foreground">Restore Purchases</span>
           </button>
+          {blockedUsers.length > 0 && (
+            <div className="w-full mt-2 mb-1">
+              <p className="text-xs text-muted-foreground font-medium px-3 mb-1">Blocked Users</p>
+              {blockedUsers.map(b => (
+                <div key={b.blocked_user_id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-secondary transition-colors">
+                  <div className="h-8 w-8 rounded-full bg-secondary overflow-hidden flex-shrink-0">
+                    {b.profiles?.profile_image
+                      ? <img src={b.profiles.profile_image} alt="" className="w-full h-full object-cover"/>
+                      : <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground">{(b.profiles?.full_name||"?")[0]?.toUpperCase()}</div>
+                    }
+                  </div>
+                  <span className="flex-1 text-sm">{b.profiles?.full_name || "Unknown user"}</span>
+                  <button onClick={() => handleUnblock(b.blocked_user_id)} className="text-xs text-primary font-medium px-3 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors">
+                    Unblock
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => setDeleteOpen(true)}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-destructive/10 transition-colors text-left"
