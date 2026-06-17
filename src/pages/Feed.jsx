@@ -1,5 +1,6 @@
 // src/pages/Feed.jsx
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/api/supabaseClient";
 import ReelCard from "../components/ReelCard";
 import WorkoutPlanCard from "../components/WorkoutPlanCard";
@@ -10,15 +11,27 @@ import { Loader2, Flame } from "lucide-react";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 
 export default function Feed() {
+  const { user } = useAuth();
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [activeCommentPost, setActiveCommentPost] = useState(null);
   const [activeSharePost, setActiveSharePost] = useState(null);
-  const [blockedIds, setBlockedIds] = useState(new Set());
   const containerRef = useRef(null);
 
+  // Load blocked ids from DB on mount so they persist across navigation
+  const { data: blockedData = [], refetch: refetchBlocked } = useQuery({
+    queryKey: ["blocked-ids"],
+    queryFn: async () => {
+      const { data } = await supabase.from("blocked_users").select("blocked_user_id").eq("user_id", user.id);
+      return data || [];
+    },
+    enabled: !!user,
+  });
+
+  const blockedIds = useMemo(() => new Set(blockedData.map(b => b.blocked_user_id)), [blockedData]);
+
   const handleBlock = useCallback((userId) => {
-    setBlockedIds(prev => new Set([...prev, userId]));
-  }, []);
+    refetchBlocked();
+  }, [refetchBlocked]);
 
   const { data: rawPosts = [], isLoading } = useQuery({
     queryKey: ["posts"],
