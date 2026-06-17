@@ -47,13 +47,13 @@ const TOTAL_STEPS = 5;
 export default function Onboarding({ onDone }) {
   const { user, updateProfile } = useAuth();
   const queryClient = useQueryClient();
-  const [step, setStep]               = useState(0);
-  const [name, setName]               = useState(
+  const initialName =
     user?.full_name ||
     user?.user_metadata?.full_name ||
     user?.user_metadata?.name ||
-    ""
-  );
+    "";
+  const [step, setStep]               = useState(initialName ? 1 : 0);
+  const [name, setName]               = useState(initialName);
   const [gender, setGender]           = useState(null);
   const [age, setAge]                 = useState("");
   const [weight, setWeight]           = useState("");
