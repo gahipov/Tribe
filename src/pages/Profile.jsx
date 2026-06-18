@@ -102,8 +102,17 @@ export default function Profile() {
   const isAdmin = ADMINS.includes(user?.email);
 
   const grantPro = async (email) => {
-    const { error } = await supabase.from("profiles").update({ is_premium: true }).eq("email", email);
-    if (error) toast.error("Failed: " + error.message);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/grant-pro`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ targetEmail: email }),
+    });
+    const result = await res.json();
+    if (!res.ok) toast.error("Failed: " + result.error);
     else toast.success(`Pro granted to ${email}`);
   };
 
