@@ -313,7 +313,10 @@ export default function Profile() {
         {/* Subscription management */}
         <div className="w-full mt-4">
           <button
-            onClick={() => presentCustomerCenter()}
+            onClick={async () => {
+              const ok = await presentCustomerCenter();
+              if (!ok) toast.info("Manage your subscription in the App Store → Account → Subscriptions.");
+            }}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
           >
             <Sparkles className="h-5 w-5 text-primary" />

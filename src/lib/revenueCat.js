@@ -68,10 +68,13 @@ export async function restorePurchases() {
 }
 
 export async function presentCustomerCenter() {
-  const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
+  if (!isNative() || !_rcConfigured) return false;
   try {
+    const { RevenueCatUI } = await import('@revenuecat/purchases-capacitor-ui');
     await RevenueCatUI.presentCustomerCenter();
+    return true;
   } catch (e) {
     console.error('Customer center failed:', e);
+    return false;
   }
 }
