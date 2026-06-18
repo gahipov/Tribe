@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { presentCustomerCenter, restorePurchases } from "@/lib/revenueCat";
+import { presentPaywall, restorePurchases, isNative } from "@/lib/revenueCat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +19,7 @@ export default function Profile() {
   const [editOpen, setEditOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ full_name: "", bio: "", city: "", gym_name: "", fitness_interests: "" });
@@ -142,11 +143,8 @@ export default function Profile() {
   const handleRestore = async () => {
     const isNowPremium = await restorePurchases();
     await refreshPremium();
-    if (isNowPremium) {
-      toast.success("Purchases restored!");
-    } else {
-      toast.info("No active subscription found.");
-    }
+    if (isNowPremium) toast.success("Purchases restored!");
+    return isNowPremium;
   };
 
   const handleImageUpload = async (e) => {
@@ -322,11 +320,7 @@ export default function Profile() {
         {/* Subscription management */}
         <div className="w-full mt-4">
           <button
-            onClick={async () => {
-              const ok = await presentCustomerCenter();
-              await refreshPremium();
-              if (!ok) toast.info("Manage your subscription in Settings → [Your Name] → Subscriptions.");
-            }}
+            onClick={() => setManageOpen(true)}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
           >
             <Sparkles className="h-5 w-5 text-primary" />
@@ -369,6 +363,48 @@ export default function Profile() {
 
         {posts.length > 0 && <div className="w-full mt-6"><p className="text-xs text-muted-foreground font-heading font-medium uppercase tracking-wider mb-3">Your Posts</p><div className="grid grid-cols-3 gap-1.5">{posts.filter(p => p.media_url).map(p => <div key={p.id} className="aspect-square rounded-xl overflow-hidden bg-secondary">{p.media_type==="video" ? <video src={p.media_url} className="w-full h-full object-cover" preload="metadata"/> : <img src={p.media_url} alt="" className="w-full h-full object-cover"/>}</div>)}</div></div>}
       </div>
+      {/* Manage Subscription sheet */}
+      {manageOpen && (
+        <>
+          <div className="fixed inset-0 z-[59] bg-black/50" onClick={() => setManageOpen(false)}/>
+          <div className="fixed bottom-0 left-0 right-0 z-[60] bg-card rounded-t-2xl border-t border-border p-5 pb-10 max-w-lg mx-auto">
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mb-5"/>
+            <p className="font-heading font-bold text-base mb-4">Manage Subscription</p>
+            <div className="space-y-2">
+              <button
+                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-secondary hover:bg-primary/10 transition-colors text-left"
+                onClick={async () => {
+                  setManageOpen(false);
+                  if (!isNative()) { toast.info("Open the app on your phone to change plans."); return; }
+                  await presentPaywall();
+                  await refreshPremium();
+                }}
+              >
+                <Sparkles className="h-5 w-5 text-primary flex-shrink-0"/>
+                <div>
+                  <p className="text-sm font-medium">Change Plans</p>
+                  <p className="text-xs text-muted-foreground">Upgrade or switch your subscription</p>
+                </div>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-secondary hover:bg-primary/10 transition-colors text-left"
+                onClick={async () => {
+                  setManageOpen(false);
+                  const restored = await handleRestore();
+                  if (!restored) toast.info("No active subscription found.");
+                }}
+              >
+                <Settings className="h-5 w-5 text-muted-foreground flex-shrink-0"/>
+                <div>
+                  <p className="text-sm font-medium">Restore Purchases</p>
+                  <p className="text-xs text-muted-foreground">Already subscribed? Tap to restore</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <Dialog open={goalsOpen} onOpenChange={setGoalsOpen}>
         <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader><DialogTitle className="font-heading flex items-center gap-2"><Target className="h-4 w-4"/>Daily Goals</DialogTitle></DialogHeader>
