@@ -312,20 +312,12 @@ export default function Profile() {
 
         {/* Subscription management */}
         <div className="w-full mt-4">
-          {isPremium && (
-            <button
-              onClick={() => presentCustomerCenter()}
-              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
-            >
-              <Sparkles className="h-5 w-5 text-primary" />
-              <span className="text-sm font-medium">Manage Subscription</span>
-            </button>
-          )}
           <button
-            onClick={handleRestore}
+            onClick={() => presentCustomerCenter()}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
           >
-            <span className="text-sm text-muted-foreground">Restore Purchases</span>
+            <Sparkles className="h-5 w-5 text-primary" />
+            <span className="text-sm font-medium">Manage Subscription</span>
           </button>
           {blockedUsers.length > 0 && (
             <div className="w-full mt-2 mb-1">
