@@ -35,6 +35,9 @@ export default function Discover() {
   const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ title: "", description: "", gym_name: "", event_date: "", event_time: "" });
   const [rsvpedEvents, setRsvpedEvents] = useState(new Set());
+  const [connectPending, setConnectPending] = useState(null);
+  const [connectMessage, setConnectMessage] = useState("Hey! Let's hit the gym together.");
+  const [inviteBuddy, setInviteBuddy] = useState(null);
   const queryClient = useQueryClient();
 
   useEffect(() => { if (user?.lat && user?.lng) setMyLocation({ lat: user.lat, lng: user.lng }); }, [user]);
@@ -74,23 +77,60 @@ export default function Discover() {
   });
 
   const acceptRequestMutation = useMutation({
-    mutationFn: async (id) => { await supabase.from('buddy_requests').update({ status: 'accepted' }).eq('id', id); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["incoming-buddy-requests"] }); toast.success("Request accepted!"); },
+    mutationFn: async (id) => {
+      await supabase.from('buddy_requests').update({ status: 'accepted' }).eq('id', id).eq('to_user_email', user.email);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["incoming-buddy-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["accepted-buddies"] });
+      toast.success("Request accepted!");
+    },
   });
 
   const declineRequestMutation = useMutation({
-    mutationFn: async (id) => { await supabase.from('buddy_requests').update({ status: 'declined' }).eq('id', id); },
+    mutationFn: async (id) => {
+      await supabase.from('buddy_requests').update({ status: 'declined' }).eq('id', id).eq('to_user_email', user.email);
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["incoming-buddy-requests"] }); toast.success("Request declined"); },
+  });
+
+  const { data: acceptedBuddies = [] } = useQuery({
+    queryKey: ["accepted-buddies"],
+    queryFn: async () => {
+      const [{ data: sent }, { data: received }] = await Promise.all([
+        supabase.from('buddy_requests').select('to_user_email').eq('from_user_id', user.id).eq('status', 'accepted'),
+        supabase.from('buddy_requests').select('from_user_id').eq('to_user_email', user.email).eq('status', 'accepted'),
+      ]);
+      const emails = (sent || []).map(r => r.to_user_email);
+      const ids = (received || []).map(r => r.from_user_id);
+      const all = [];
+      if (emails.length) { const { data } = await supabase.from('profiles').select('*').in('email', emails); all.push(...(data || [])); }
+      if (ids.length)   { const { data } = await supabase.from('profiles').select('*').in('id', ids);    all.push(...(data || [])); }
+      return [...new Map(all.map(p => [p.id, p])).values()];
+    },
+    enabled: !!user,
   });
 
   useEffect(() => { if (existingRequests.length > 0) setSentRequests(new Set(existingRequests.map(r => r.to_user_email))); }, [existingRequests]);
 
   const connectMutation = useMutation({
-    mutationFn: async (profile) => {
-      const { error } = await supabase.from('buddy_requests').insert({ from_user_id: user.id, to_user_email: profile.email, to_user_name: profile.full_name||profile.email, status: "pending", message: "Hey! Let's hit the gym together." });
+    mutationFn: async ({ profile, message }) => {
+      const { error } = await supabase.from('buddy_requests').insert({
+        from_user_id: user.id,
+        to_user_email: profile.email,
+        to_user_name: profile.full_name || profile.email,
+        status: "pending",
+        message,
+      });
       if (error) throw error;
     },
-    onSuccess: (_, profile) => { setSentRequests(prev => new Set([...prev, profile.email])); queryClient.invalidateQueries({ queryKey: ["buddy-requests"] }); toast.success("Connection request sent!"); }
+    onSuccess: (_, { profile }) => {
+      setSentRequests(prev => new Set([...prev, profile.email]));
+      queryClient.invalidateQueries({ queryKey: ["buddy-requests"] });
+      setConnectPending(null);
+      setConnectMessage("Hey! Let's hit the gym together.");
+      toast.success("Connection request sent!");
+    },
   });
 
   const usersWithDistance = profiles.filter(p => p.id !== user?.id)
@@ -126,8 +166,7 @@ export default function Discover() {
     mutationFn: async (tribeId) => {
       const { error } = await supabase.from("tribe_members").insert({ tribe_id: tribeId, user_id: user.id });
       if (error) throw error;
-      const current = tribes.find(t => t.id === tribeId);
-      await supabase.from("tribes").update({ member_count: (current?.member_count || 1) + 1 }).eq("id", tribeId);
+      // member_count updated by DB trigger
     },
     onSuccess: (_, tribeId) => { setJoinedTribes(prev => new Set([...prev, tribeId])); queryClient.invalidateQueries({ queryKey: ["tribes"] }); toast.success("Joined tribe!"); },
     onError: () => toast.error("Failed to join tribe"),
@@ -136,8 +175,7 @@ export default function Discover() {
   const leaveTribeMutation = useMutation({
     mutationFn: async (tribeId) => {
       await supabase.from("tribe_members").delete().eq("tribe_id", tribeId).eq("user_id", user.id);
-      const current = tribes.find(t => t.id === tribeId);
-      await supabase.from("tribes").update({ member_count: Math.max(1, (current?.member_count || 2) - 1) }).eq("id", tribeId);
+      // member_count updated by DB trigger
     },
     onSuccess: (_, tribeId) => { setJoinedTribes(prev => { const n=new Set(prev); n.delete(tribeId); return n; }); queryClient.invalidateQueries({ queryKey: ["tribes"] }); toast.success("Left tribe"); },
     onError: () => toast.error("Failed to leave tribe"),
@@ -165,7 +203,13 @@ export default function Discover() {
       const { error } = await supabase.from("workout_events").insert({ title: eventForm.title, description: eventForm.description, gym_name: eventForm.gym_name, event_date, creator_id: user.id, creator_name: user.full_name || user.email, creator_image: user.profile_image || "" });
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["workout_events"] }); toast.success("Event created!"); setEventForm({ title: "", description: "", gym_name: "", event_date: "", event_time: "" }); setEventDialogOpen(false); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workout_events"] });
+      toast.success(inviteBuddy ? `Event created! ${inviteBuddy.full_name || "Your buddy"} can see it in Events.` : "Event created!");
+      setEventForm({ title: "", description: "", gym_name: "", event_date: "", event_time: "" });
+      setEventDialogOpen(false);
+      setInviteBuddy(null);
+    },
     onError: (e) => toast.error("Failed: " + e.message),
   });
 
@@ -223,6 +267,47 @@ export default function Discover() {
       {/* Buddies tab */}
       {tab === "buddies" && (
         <div className="p-4 space-y-3">
+          {/* My Buddies */}
+          {acceptedBuddies.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-heading font-bold text-muted-foreground uppercase tracking-wider">My Buddies · {acceptedBuddies.length}</p>
+              {acceptedBuddies.map(buddy => (
+                <div key={buddy.id} className="bg-card rounded-2xl border border-primary/20 p-3 flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden">
+                    {buddy.profile_image
+                      ? <img src={buddy.profile_image} className="w-full h-full object-cover" alt=""/>
+                      : <div className="w-full h-full flex items-center justify-center text-primary font-bold">{(buddy.full_name||"?")[0]}</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-heading font-semibold truncate">{buddy.full_name || buddy.email}</p>
+                    {(buddy.city || buddy.gym_name) && (
+                      <p className="text-[11px] text-muted-foreground truncate">{[buddy.city, buddy.gym_name].filter(Boolean).join(" · ")}</p>
+                    )}
+                    {buddy.fitness_interests?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {buddy.fitness_interests.slice(0,2).map(i => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{i}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setInviteBuddy(buddy);
+                      setEventForm(f => ({ ...f, title: `Workout with ${buddy.full_name || "buddy"}`, gym_name: buddy.gym_name || "" }));
+                      setEventDialogOpen(true);
+                      setTab("events");
+                    }}
+                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-heading font-semibold"
+                  >
+                    <Dumbbell className="h-3 w-3"/>Invite
+                  </button>
+                </div>
+              ))}
+              <div className="h-px bg-border"/>
+            </div>
+          )}
+
           {/* Incoming requests */}
           {incomingRequests.length > 0 && (
             <div className="space-y-2">
@@ -254,7 +339,7 @@ export default function Discover() {
           : usersWithDistance.map(profile => (
             <div key={profile.id} className="relative">
               {profile.distance!==null && <div className="absolute top-3 right-12 z-10 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-full px-2 py-0.5 text-[10px] font-heading font-medium text-primary border border-border"><MapPin className="h-2.5 w-2.5"/>{distanceLabel(profile.distance)}</div>}
-              <BuddyCard user={profile} onConnect={p => connectMutation.mutate(p)} connected={sentRequests.has(profile.email)}/>
+              <BuddyCard user={profile} onConnect={p => { setConnectMessage("Hey! Let's hit the gym together."); setConnectPending(p); }} connected={sentRequests.has(profile.email)}/>
             </div>
           ))}
         </div>
@@ -353,8 +438,12 @@ export default function Discover() {
               <DialogTrigger asChild>
                 <Button size="sm" className="rounded-full font-heading"><Plus className="h-4 w-4 mr-1"/>Create Event</Button>
               </DialogTrigger>
-              <DialogContent className="bg-card border-border max-w-sm">
-                <DialogHeader><DialogTitle className="font-heading">New Workout Event</DialogTitle></DialogHeader>
+              <DialogContent className="bg-card border-border max-w-sm" onOpenChange={open => { if (!open) setInviteBuddy(null); }}>
+                <DialogHeader>
+                  <DialogTitle className="font-heading">
+                    {inviteBuddy ? `Invite ${inviteBuddy.full_name || "buddy"} to Workout` : "New Workout Event"}
+                  </DialogTitle>
+                </DialogHeader>
                 <div className="space-y-3 pt-2">
                   <div><Label className="text-xs text-muted-foreground mb-1.5 block">Title *</Label><Input value={eventForm.title} onChange={e=>setEventForm(f=>({...f,title:e.target.value}))} placeholder="Chest & Back Session" className="bg-secondary border-border"/></div>
                   <div className="grid grid-cols-2 gap-2">
@@ -442,6 +531,44 @@ export default function Discover() {
       )}
 
       <TribeChat tribe={selectedTribe} open={!!selectedTribe} onClose={() => setSelectedTribe(null)} />
+
+      {/* Connect with message sheet */}
+      {connectPending && (
+        <>
+          <div className="fixed inset-0 z-[59] bg-black/50" onClick={() => setConnectPending(null)}/>
+          <div className="fixed bottom-0 left-0 right-0 z-[60] bg-card rounded-t-2xl border-t border-border p-5 pb-8 max-w-lg mx-auto">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-primary/10 overflow-hidden flex-shrink-0">
+                {connectPending.profile_image
+                  ? <img src={connectPending.profile_image} className="w-full h-full object-cover" alt=""/>
+                  : <div className="w-full h-full flex items-center justify-center text-primary font-bold">{(connectPending.full_name||"?")[0]}</div>}
+              </div>
+              <div>
+                <p className="font-heading font-semibold text-sm">{connectPending.full_name || connectPending.email}</p>
+                <p className="text-[11px] text-muted-foreground">Send a connection request</p>
+              </div>
+            </div>
+            <Textarea
+              value={connectMessage}
+              onChange={e => setConnectMessage(e.target.value)}
+              placeholder="Write a message..."
+              className="bg-secondary border-border resize-none mb-3"
+              rows={3}
+              maxLength={200}
+            />
+            <div className="flex gap-2">
+              <Button variant="secondary" className="flex-1 font-heading" onClick={() => setConnectPending(null)}>Cancel</Button>
+              <Button
+                className="flex-1 font-heading"
+                disabled={!connectMessage.trim() || connectMutation.isPending}
+                onClick={() => connectMutation.mutate({ profile: connectPending, message: connectMessage.trim() })}
+              >
+                {connectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1"/> : null}Send Request
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -11,14 +11,13 @@ import { toast } from "sonner";
 export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare, onBlock }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(() => (post.post_likes?.length ?? 0) > 0);
   const [flagMenu, setFlagMenu] = useState(false);
   const [reportDialog, setReportDialog] = useState(false);
   const isOwner = user?.id === post.user_id;
 
   const REPORT_REASONS = ["Spam", "Inappropriate content", "Harassment", "Misinformation", "Other"];
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
-  const [commentsCount, setCommentsCount] = useState(post.comments_count || 0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showHeart, setShowHeart] = useState(false);
@@ -47,16 +46,16 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
     };
   }, []);
 
-  // Fix 3: handleLike with error rollback
   const handleLike = async () => {
     const newLiked = !liked;
     setLiked(newLiked);
     setLikesCount((c) => (newLiked ? c + 1 : c - 1));
-    const { error } = await supabase
-      .from("posts")
-      .update({ likes_count: newLiked ? likesCount + 1 : likesCount - 1 })
-      .eq("id", post.id);
-    if (error) {
+    try {
+      const { data, error } = await supabase.rpc("toggle_like", { p_post_id: post.id });
+      if (error) throw error;
+      if (data?.likes_count != null) setLikesCount(data.likes_count);
+    } catch {
+      // rollback
       setLiked(!newLiked);
       setLikesCount((c) => (newLiked ? c - 1 : c + 1));
     }
@@ -235,7 +234,7 @@ export default function ReelCard({ post, isVisible, onOpenComments, onOpenShare,
           <div className="h-11 w-11 rounded-full bg-black/30 flex items-center justify-center">
             <MessageCircle className="h-6 w-6 text-white" />
           </div>
-          <span className="text-white text-xs">{commentsCount}</span>
+          <span className="text-white text-xs">{post.comments_count || 0}</span>
         </button>
 
         <button onClick={() => onOpenShare?.()} className="flex flex-col items-center gap-1">

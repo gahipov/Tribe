@@ -38,7 +38,7 @@ export default function Feed() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("posts")
-        .select("*")
+        .select("*, post_likes(user_id)")
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
