@@ -315,7 +315,8 @@ export default function Profile() {
           <button
             onClick={async () => {
               const ok = await presentCustomerCenter();
-              if (!ok) toast.info("Manage your subscription in the App Store → Account → Subscriptions.");
+              await refreshPremium();
+              if (!ok) toast.info("Manage your subscription in Settings → [Your Name] → Subscriptions.");
             }}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors text-left"
           >

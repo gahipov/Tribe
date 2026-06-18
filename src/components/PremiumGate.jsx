@@ -1,8 +1,9 @@
 import { Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { presentPaywall } from "@/lib/revenueCat";
+import { presentPaywall, isNative } from "@/lib/revenueCat";
 import { useAuth } from "@/lib/AuthContext";
+import { Capacitor } from "@capacitor/core";
 import { toast } from "sonner";
 
 function UpgradeModal({ open, onClose, feature }) {
@@ -14,7 +15,12 @@ function UpgradeModal({ open, onClose, feature }) {
     try {
       const result = await presentPaywall();
       if (result?.webFallback) {
-        toast.info("Open the app on your iPhone to subscribe.");
+        toast.info("Open the app on your phone to subscribe.");
+        setLoading(false);
+        return;
+      }
+      if (result?.result === 'ERROR') {
+        toast.error("Could not open subscription. Check your connection and try again.");
         setLoading(false);
         return;
       }
@@ -61,7 +67,7 @@ function UpgradeModal({ open, onClose, feature }) {
             >
               {loading ? "Opening…" : "Upgrade to Tribe Pro"}
             </button>
-            <p className="text-[11px] text-muted-foreground mt-2">Cancel anytime · Managed by Apple</p>
+            <p className="text-[11px] text-muted-foreground mt-2">Cancel anytime · Managed by {Capacitor.getPlatform() === 'android' ? 'Google' : 'Apple'}</p>
             <p className="text-[11px] text-muted-foreground mt-1">
               <a href="https://doc-hosting.flycricket.io/tribe-privacy-policy/7e096891-025c-41fc-8151-f9a99d5c962f/privacy" target="_blank" rel="noopener noreferrer" className="underline">Privacy Policy</a>
               {" · "}
