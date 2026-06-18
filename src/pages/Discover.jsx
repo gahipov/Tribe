@@ -42,14 +42,20 @@ export default function Discover() {
 
   useEffect(() => { if (user?.lat && user?.lng) setMyLocation({ lat: user.lat, lng: user.lng }); }, [user]);
 
-  const shareLocation = () => {
+  const shareLocation = async () => {
     setLocLoading(true);
-    navigator.geolocation.getCurrentPosition(async pos => {
+    try {
+      const { Geolocation } = await import('@capacitor/geolocation');
+      const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 });
       const { latitude: lat, longitude: lng } = pos.coords;
       setMyLocation({ lat, lng });
       await supabase.from('profiles').update({ lat, lng }).eq('id', user.id);
-      setLocLoading(false); toast.success("Location shared!");
-    }, () => { setLocLoading(false); toast.error("Couldn't get location."); });
+      toast.success("Location shared!");
+    } catch {
+      toast.error("Couldn't get location. Please allow location access.");
+    } finally {
+      setLocLoading(false);
+    }
   };
 
   const { data: profiles = [], isLoading } = useQuery({
