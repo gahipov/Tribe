@@ -94,29 +94,7 @@ CREATE TRIGGER sync_tribe_member_count_trigger
 UPDATE tribes
 SET member_count = (SELECT COUNT(*) FROM tribe_members WHERE tribe_members.tribe_id = tribes.id);
 
--- ── 5. buddy_requests ownership RLS ───────────────────────
--- Only the receiver can accept/decline their own requests.
--- Check if RLS is already enabled; if not, enable it carefully.
-ALTER TABLE buddy_requests ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Anyone can read buddy requests they are part of" ON buddy_requests;
-CREATE POLICY "Anyone can read buddy requests they are part of" ON buddy_requests
-  FOR SELECT USING (
-    from_user_id = auth.uid() OR
-    to_user_email = (auth.jwt() ->> 'email')
-  );
-
-DROP POLICY IF EXISTS "Users can insert their own requests" ON buddy_requests;
-CREATE POLICY "Users can insert their own requests" ON buddy_requests
-  FOR INSERT WITH CHECK (from_user_id = auth.uid());
-
-DROP POLICY IF EXISTS "Receiver can update own requests" ON buddy_requests;
-CREATE POLICY "Receiver can update own requests" ON buddy_requests
-  FOR UPDATE USING (to_user_email = (auth.jwt() ->> 'email'));
-
-DROP POLICY IF EXISTS "Users can delete requests they own" ON buddy_requests;
-CREATE POLICY "Users can delete requests they own" ON buddy_requests
-  FOR DELETE USING (
-    from_user_id = auth.uid() OR
-    to_user_email = (auth.jwt() ->> 'email')
-  );
+-- ── 5. tribe member_count default fix ─────────────────────
+-- Default was 1; with the trigger incrementing on every insert,
+-- new tribes would start at 1 and immediately become 2.
+ALTER TABLE tribes ALTER COLUMN member_count SET DEFAULT 0;
