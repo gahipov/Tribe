@@ -58,6 +58,7 @@ export async function presentPaywall() {
 }
 
 export async function restorePurchases() {
+  if (!_rcConfigured) return false;
   try {
     const { customerInfo } = await Purchases.restorePurchases();
     return !!customerInfo.entitlements.active[ENTITLEMENT_ID];
