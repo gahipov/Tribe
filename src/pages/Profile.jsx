@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { restorePurchases } from "@/lib/revenueCat";
+import { restorePurchases, isNative } from "@/lib/revenueCat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -141,9 +141,14 @@ export default function Profile() {
   };
 
   const handleRestore = async () => {
+    if (!isNative()) {
+      toast.info("Open the app on your phone to restore purchases.");
+      return false;
+    }
     const isNowPremium = await restorePurchases();
     await refreshPremium();
     if (isNowPremium) toast.success("Purchases restored!");
+    else toast.info("No active subscription found.");
     return isNowPremium;
   };
 
