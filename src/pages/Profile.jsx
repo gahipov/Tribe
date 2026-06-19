@@ -15,7 +15,7 @@ import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, Dot } from
 import { X as XIcon } from "lucide-react";
 
 export default function Profile() {
-  const { user, logout, deleteAccount, updateProfile, isPremium, refreshPremium } = useAuth();
+  const { user, logout, deleteAccount, updateProfile, isPremium, refreshPremium, refreshPremiumRC } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -145,8 +145,10 @@ export default function Profile() {
       toast.info("Open the app on your phone to restore purchases.");
       return false;
     }
+    // restorePurchases contacts Apple/Google and returns RC entitlement result only
     const isNowPremium = await restorePurchases();
-    await refreshPremium();
+    // refreshPremiumRC uses RC result only — no DB fallback that could give false pro
+    await refreshPremiumRC();
     if (isNowPremium) toast.success("Purchases restored!");
     else toast.info("No active subscription found.");
     return isNowPremium;

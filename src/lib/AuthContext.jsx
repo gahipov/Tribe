@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshPremium = async () => {
-    // Check RevenueCat first, fall back to Supabase is_premium field
+    // Check RevenueCat first, fall back to Supabase is_premium field (for admin-granted pro)
     const rcPremium = await getIsPremium();
     if (rcPremium) {
       setIsPremium(true);
@@ -72,6 +72,13 @@ export const AuthProvider = ({ children }) => {
     }
     setIsPremium(false);
     return false;
+  };
+
+  // RC-only check — used after restorePurchases so DB is_premium can't cause false positives
+  const refreshPremiumRC = async () => {
+    const rcPremium = await getIsPremium();
+    setIsPremium(rcPremium);
+    return rcPremium;
   };
 
   const logout = async () => {
@@ -138,6 +145,7 @@ export const AuthProvider = ({ children }) => {
       updateProfile,
       refreshProfile,
       refreshPremium,
+      refreshPremiumRC,
     }}>
       {children}
     </AuthContext.Provider>
