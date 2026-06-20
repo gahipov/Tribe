@@ -373,7 +373,7 @@ export default function Profile() {
             <span className="text-xs text-muted-foreground">·</span>
             <a href="https://doc-hosting.flycricket.io/tribe-terms-of-use/62be134f-66f3-4e9c-9ccf-3e5070a1cf81/terms" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Use</a>
             <span className="text-xs text-muted-foreground">·</span>
-            <a href="mailto:support@tribe.fit" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact Support</a>
+            <a href="https://tribesupportpage.carrd.co/" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact Support</a>
           </div>
         </div>
 
